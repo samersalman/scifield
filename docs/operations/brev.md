@@ -64,17 +64,27 @@ failing the build, and the smoke run is deferred to a later session.
 
 ## Smoke run log
 
-**2026-05-19 (V1-S02 first execute)** — Live smoke on `n2d-highcpu-2`
-($0.05/hr, GCP). `brev create` succeeded, instance reached `Ready`,
-`brev exec` reached the SSH layer, and the trap-based `brev stop` fired
-cleanly on EXIT (no orphan instance). The harness — launch, SSH, exec,
-stop — is validated end-to-end.
+**2026-05-19 (V1-S02 execute) — first attempt.** Live smoke on
+`n2d-highcpu-2` ($0.05/hr, GCP). `brev create` succeeded, instance
+reached `Ready`, `brev exec` reached the SSH layer, but the original
+implementation did the repo clone in `--startup-script` and raced
+against `brev exec`: Brev marks an instance `Ready` as soon as SSH is
+up, *not* when the startup script finishes, so `brev exec` found
+`$HOME/scifield` missing and bailed. The trap-based `brev stop` fired
+cleanly on EXIT (no orphan instance). Fix landed in commit
+`fix(brev): clone inline inside brev exec, not in --startup-script`.
 
-The original implementation did the repo clone in `--startup-script`,
-which raced against `brev exec`: Brev marks an instance `Ready` as soon
-as SSH is up, *not* when the startup script finishes, so `brev exec`
-found `$HOME/scifield` missing and bailed. The fix (commit
-`fix(brev): clone inline inside brev exec...`) moves the `git clone`
-into the `brev exec` command itself so timing is deterministic. The next
-smoke run will exercise the full launch → clone → sync → demo → stop
-cycle from a fresh boot.
+**2026-05-19 (V1-S02 execute) — retry with inline clone.** Fresh
+`n2d-highcpu-2`. Full cycle completed end-to-end:
+
+```
+brev create → Ready → brev exec (git clone + uv install + uv sync +
+uv run scifield demo) → n_papers=100 mean_abstract_chars=1682 →
+trap brev stop on EXIT → brev delete
+```
+
+Output matched the local-machine run exactly (100 papers, 1682 mean
+abstract chars). Total wall time ~10 minutes, total spend ~$0.01. The
+launch / clone / sync / run / stop harness is now validated against
+the V1-S02 demo; V1-S05's first real GPU launch will be the second
+time this harness has been exercised, not the first.
