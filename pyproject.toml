@@ -16,6 +16,9 @@ dependencies = [
     "omegaconf>=2.3",
     "biopython>=1.84",
     "pyarrow>=17",
+    "httpx>=0.27",
+    "tenacity>=9.0",
+    "duckdb>=1.1",
 ]
 
 [project.scripts]
@@ -31,6 +34,11 @@ dev = [
     "black>=24.8",
     "mypy>=1.11",
     "pre-commit>=3.8",
+    "pytest-asyncio>=0.24",
+    "respx>=0.21",
+    "jupyter>=1.1",
+    "matplotlib>=3.10.9",
+    "pandas>=3.0.3",
 ]
 docs = [
     "mkdocs>=1.6",
@@ -59,3 +67,4 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"

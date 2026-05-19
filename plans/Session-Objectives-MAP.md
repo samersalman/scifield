@@ -166,6 +166,16 @@ Note: the existing `Version 1/` and `Version 2/` folders should be matched by a 
 
 **Risk hooks.** Plan §6 risk row 1 (OpenAlex coverage pre-2000) — this session is PubMed only, so not yet triggered. But measure abstract availability pre-2000 here and write it into the corpus stats.
 
+**Status: ✓ with notes (2026-05-19).**
+- Harvest complete: **134,978 papers across 310 buckets (10 journals × 31 years), 233s wall-time** with API key.
+- Pipeline: 0 parse failures; esearch_count == parsed_count == 134,978 (no drop between PubMed and Parquet).
+- Acceptance gate notes:
+  - **Total count came in below the 150k–250k band (134,978).** Not a harvest bug — esearch returned every PMID PubMed indexes for these TA queries; we captured all of them. The 150k–250k estimate appears to have over-counted vs. real PubMed indexing.
+  - **Overall abstract coverage 74.1%, below the 95% gate.** Root cause is publication-type mix, not era sparseness: in general-surgery journals 30–35% of indexed items are Comments / Letters / Case Reports for which the publisher provides no abstract (e.g., JAMA Surg: Comments 0.2% abs, Letters 4.2% abs). Within research-article types — `Multicenter Study`, `Randomized Controlled Trial`, `Comparative Study` — abstract coverage runs 90–99% across all 10 journals. Downstream sessions that need a "high-abstract" analytic subset should filter on `publication_types`, not restrict by era.
+  - Era breakdown (input to V1-S04 OpenAlex coverage decisions): **<2000 78.2% / 2000-09 78.0% / 2010-19 74.4% / 2020+ 68.2%.** Pre-2000 is NOT the abstract bottleneck the plan §6 risk row anticipated; the 2020+ drop reflects epub-ahead-of-print + commentary volume.
+  - Sidecars: 310/310 Parquet, 310/310 manifest, DuckDB sidecar present.
+- Notebook `notebooks/01_corpus_overview.ipynb` executes end-to-end against full corpus.
+
 ---
 
 ### V1-S04 — Corpus v1 enrichment: OpenAlex + Semantic Scholar + ROR + author disambiguation

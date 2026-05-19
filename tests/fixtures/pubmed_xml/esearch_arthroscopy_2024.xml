@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE eSearchResult PUBLIC "-//NLM//DTD esearch 20060628//EN" "https://eutils.ncbi.nlm.nih.gov/eutils/dtd/20060628/esearch.dtd">
+<eSearchResult>
+    <Count>5</Count>
+    <RetMax>5</RetMax>
+    <RetStart>0</RetStart>
+    <IdList>
+        <Id>40000001</Id>
+        <Id>40000002</Id>
+        <Id>40000003</Id>
+        <Id>40000004</Id>
+        <Id>40000005</Id>
+    </IdList>
+    <TranslationSet>
+        <Translation>
+            <From>"Arthroscopy"[Journal]</From>
+            <To>"Arthroscopy"[Journal]</To>
+        </Translation>
+    </TranslationSet>
+    <TranslationStack>
+        <TermSet>
+            <Term>"Arthroscopy"[Journal]</Term>
+            <Field>Journal</Field>
+            <Count>5</Count>
+            <Explode>N</Explode>
+        </TermSet>
+        <TermSet>
+            <Term>2024[PDAT]</Term>
+            <Field>PDAT</Field>
+            <Count>5</Count>
+            <Explode>N</Explode>
+        </TermSet>
+        <OP>AND</OP>
+    </TranslationStack>
+    <QueryTranslation>"Arthroscopy"[Journal] AND 2024[PDAT]</QueryTranslation>
+</eSearchResult>

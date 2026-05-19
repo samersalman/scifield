@@ -1,0 +1,51 @@
+journals:
+  - slug: j_bone_joint_surg_am
+    display: "J. Bone & Joint Surgery (Am)"
+    ta_terms: ["J Bone Joint Surg Am"]
+  - slug: arthroscopy
+    display: "Arthroscopy"
+    ta_terms: ["Arthroscopy"]
+  - slug: j_arthroplasty
+    display: "Journal of Arthroplasty"
+    ta_terms: ["J Arthroplasty"]
+  - slug: spine
+    display: "Spine"
+    ta_terms: ["Spine (Phila Pa 1976)"]
+  - slug: clin_orthop_relat_res
+    display: "Clinical Orthopaedics & Related Research"
+    ta_terms: ["Clin Orthop Relat Res"]
+  - slug: ann_surg
+    display: "Annals of Surgery"
+    ta_terms: ["Ann Surg"]
+  - slug: jama_surg
+    display: "JAMA Surgery (incl. Arch Surg pre-2013)"
+    ta_terms: ["JAMA Surg", "Arch Surg"]
+  - slug: j_am_coll_surg
+    display: "Journal of the American College of Surgeons"
+    ta_terms: ["J Am Coll Surg"]
+  - slug: br_j_surg
+    display: "British Journal of Surgery"
+    ta_terms: ["Br J Surg"]
+  - slug: surgery
+    display: "Surgery"
+    ta_terms: ["Surgery"]
+
+year_range: [1995, 2025]
+
+entrez:
+  email: "samer.salman2021@gmail.com"
+  # api_key is read from NCBI_API_KEY env var at runtime; not stored in config.
+  base_url: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+  request_timeout_s: 60
+  max_retries: 5
+
+harvest:
+  batch_size: 200          # PMIDs per efetch call
+  rate_limit_with_key: 9   # req/s when NCBI_API_KEY set (NCBI ceiling is 10; leave headroom)
+  rate_limit_no_key: 2     # req/s without key (NCBI ceiling is 3; leave headroom)
+
+output:
+  parquet_dir: "data/v1/parquet"
+  duckdb_path: "data/v1/papers.duckdb"
+  manifest_dir: "data/v1/manifests"
+  log_dir: "data/v1/logs"

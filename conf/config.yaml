@@ -1,3 +1,4 @@
 # Future composition root for Hydra. Phase configs will be wired in via `defaults`
 # in later sprints (V1-S03+).
-defaults: []
+defaults:
+  - corpus: v1
