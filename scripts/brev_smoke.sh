@@ -43,15 +43,12 @@ fi
 echo "${BREV_BALANCE_BEFORE}"
 
 # 4. Launch the smallest CPU instance, tagged for this smoke.
-# The repo is cloned via --startup-script (no native --git flag in brev v0.6.x).
-STARTUP_SCRIPT="set -euxo pipefail
-cd \$HOME
-git clone ${REPO_URL} scifield || (cd scifield && git pull)
-"
+# We don't use --startup-script for the clone because brev marks the instance
+# "Ready" as soon as SSH is up, which races the async startup-script. Instead
+# we do the clone inline inside brev exec (step 6) so timing is deterministic.
 echo "[brev_smoke] Creating instance ${INSTANCE_NAME} (type=${SMALLEST_CPU_INSTANCE})..."
 brev create "${INSTANCE_NAME}" \
-  --type "${SMALLEST_CPU_INSTANCE}" \
-  --startup-script "${STARTUP_SCRIPT}"
+  --type "${SMALLEST_CPU_INSTANCE}"
 
 # 7. Guarantee teardown immediately after a successful create.
 trap 'brev stop '"${INSTANCE_NAME}"' || true' EXIT
@@ -80,9 +77,18 @@ fi
 
 echo "[brev_smoke] Instance is ready."
 
-# 6. SSH-exec the smoke commands (brev exec is the non-interactive variant).
+# 6. SSH-exec the smoke commands. Clone inline so we don't depend on
+#    --startup-script timing (brev reports Ready when SSH is up, not when
+#    the startup script finishes).
 echo "[brev_smoke] Running smoke commands on ${INSTANCE_NAME}..."
-brev exec "${INSTANCE_NAME}" "cd \$HOME/scifield && curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH=\$HOME/.local/bin:\$PATH && uv sync && uv run scifield demo"
+brev exec "${INSTANCE_NAME}" "\
+set -euxo pipefail; \
+cd \$HOME; \
+[ -d scifield ] || git clone ${REPO_URL} scifield; \
+cd scifield && git pull --ff-only origin main; \
+command -v uv >/dev/null || (curl -LsSf https://astral.sh/uv/install.sh | sh); \
+export PATH=\$HOME/.local/bin:\$PATH; \
+uv sync && uv run scifield demo"
 
 # 8. Record credit balance AFTER and print delta (best-effort).
 echo "[brev_smoke] Credit balance AFTER (raw):"

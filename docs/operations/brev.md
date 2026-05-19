@@ -61,3 +61,20 @@ bash scripts/brev_smoke.sh
 The script is defensive — if the `brev` CLI is not installed or not
 authenticated, it exits cleanly with a documented message rather than
 failing the build, and the smoke run is deferred to a later session.
+
+## Smoke run log
+
+**2026-05-19 (V1-S02 first execute)** — Live smoke on `n2d-highcpu-2`
+($0.05/hr, GCP). `brev create` succeeded, instance reached `Ready`,
+`brev exec` reached the SSH layer, and the trap-based `brev stop` fired
+cleanly on EXIT (no orphan instance). The harness — launch, SSH, exec,
+stop — is validated end-to-end.
+
+The original implementation did the repo clone in `--startup-script`,
+which raced against `brev exec`: Brev marks an instance `Ready` as soon
+as SSH is up, *not* when the startup script finishes, so `brev exec`
+found `$HOME/scifield` missing and bailed. The fix (commit
+`fix(brev): clone inline inside brev exec...`) moves the `git clone`
+into the `brev exec` command itself so timing is deterministic. The next
+smoke run will exercise the full launch → clone → sync → demo → stop
+cycle from a fresh boot.
