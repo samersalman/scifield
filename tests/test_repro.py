@@ -19,6 +19,13 @@ def test_record_run_writes_sidecar(tmp_path: Path) -> None:
 
     assert sidecar.exists()
     payload = json.loads(sidecar.read_text())
-    expected_keys = {"git_sha", "config_hash", "input_hashes", "software_versions", "timestamp"}
+    expected_keys = {
+        "git_sha",
+        "git_dirty",
+        "config_hash",
+        "input_hashes",
+        "software_versions",
+        "timestamp",
+    }
     assert expected_keys <= payload.keys()
     assert "input" in payload["input_hashes"]
