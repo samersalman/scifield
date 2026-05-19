@@ -11,3 +11,4 @@ data/
 models/
 *.duckdb
 *.parquet
+/site/

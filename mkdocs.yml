@@ -1,0 +1,49 @@
+site_name: SciField
+site_description: A multi-axis framework for monitoring scientific field health.
+repo_url: https://github.com/samersalman/scifield
+repo_name: samersalman/scifield
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mkdocstrings
+
+nav:
+  - Home: index.md
+  - Phases:
+      - "Phase 0 — Scaffolding": phases/0_scaffolding.md
+      - "Phase 1 — Corpus": phases/1_corpus.md
+      - "Phase 2 — Thematic": phases/2_thematic.md
+      - "Phase 3 — Epistemic": phases/3_epistemic.md
+      - "Phase 4 — Novelty": phases/4_novelty.md
+      - "Phase 5 — Forecasting": phases/5_forecasting.md
+      - "Phase 6 — Integration": phases/6_integration.md
+      - "Phase 7 — Validation": phases/7_validation.md
+      - "Phase 8 — Publication": phases/8_publication.md
+      - "Phase 9 — Manuscript": phases/9_manuscript.md
+  - API: api/scifield.md
+  - Operations:
+      - Brev: operations/brev.md
