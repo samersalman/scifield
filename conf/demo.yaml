@@ -1,0 +1,6 @@
+demo:
+  journal: "Arthroscopy"        # PubMed Title abbreviation
+  year_range: [2024, 2024]
+  max_papers: 100
+  email: "samer.salman2021@gmail.com"
+  output_path: "data/demo/papers.parquet"
