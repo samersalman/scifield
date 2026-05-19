@@ -18,10 +18,9 @@ set -euo pipefail
 
 INSTANCE_NAME="scifield-smoke-v1s02"
 REPO_URL="https://github.com/samersalman/scifield.git"
-# NOTE: Verify the exact flag set at execute time with `brev create --help`.
-# The smallest CPU instance type name should also be confirmed (e.g. via
-# `brev ls instance-types` or vendor docs) before relying on this in CI.
-SMALLEST_CPU_INSTANCE="n1-standard-1"
+# Cheapest x86 CPU on Brev as of v0.6.x: n2d-highcpu-2 @ $0.05/hr (GCP).
+# Verify with `brev search cpu --sort price` before relying on this in CI.
+SMALLEST_CPU_INSTANCE="n2d-highcpu-2"
 READY_TIMEOUT_SECONDS=600
 POLL_INTERVAL_SECONDS=15
 
@@ -44,11 +43,15 @@ fi
 echo "${BREV_BALANCE_BEFORE}"
 
 # 4. Launch the smallest CPU instance, tagged for this smoke.
-# NOTE: Verify exact flags with `brev create --help` before relying on this.
-echo "[brev_smoke] Creating instance ${INSTANCE_NAME}..."
+# The repo is cloned via --startup-script (no native --git flag in brev v0.6.x).
+STARTUP_SCRIPT="set -euxo pipefail
+cd \$HOME
+git clone ${REPO_URL} scifield || (cd scifield && git pull)
+"
+echo "[brev_smoke] Creating instance ${INSTANCE_NAME} (type=${SMALLEST_CPU_INSTANCE})..."
 brev create "${INSTANCE_NAME}" \
-  --instance-type "${SMALLEST_CPU_INSTANCE}" \
-  --git "${REPO_URL}"
+  --type "${SMALLEST_CPU_INSTANCE}" \
+  --startup-script "${STARTUP_SCRIPT}"
 
 # 7. Guarantee teardown immediately after a successful create.
 trap 'brev stop '"${INSTANCE_NAME}"' || true' EXIT
@@ -77,9 +80,9 @@ fi
 
 echo "[brev_smoke] Instance is ready."
 
-# 6. SSH-exec the smoke commands.
+# 6. SSH-exec the smoke commands (brev exec is the non-interactive variant).
 echo "[brev_smoke] Running smoke commands on ${INSTANCE_NAME}..."
-brev shell "${INSTANCE_NAME}" -- 'cd scifield && uv sync && uv run scifield demo'
+brev exec "${INSTANCE_NAME}" "cd \$HOME/scifield && curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH=\$HOME/.local/bin:\$PATH && uv sync && uv run scifield demo"
 
 # 8. Record credit balance AFTER and print delta (best-effort).
 echo "[brev_smoke] Credit balance AFTER (raw):"
