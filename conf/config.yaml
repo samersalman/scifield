@@ -2,3 +2,4 @@
 # in later sprints (V1-S03+).
 defaults:
   - corpus: v1
+  - thematic: embed

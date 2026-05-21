@@ -88,3 +88,29 @@ abstract chars). Total wall time ~10 minutes, total spend ~$0.01. The
 launch / clone / sync / run / stop harness is now validated against
 the V1-S02 demo; V1-S05's first real GPU launch will be the second
 time this harness has been exercised, not the first.
+
+## V1-S05 (2026-05-21): Brev deferred, ran locally
+
+The V1-S05 full-corpus embedding (99,938 abstract-bearing papers, mpnet
+768d) was run on **local Mac CPU** rather than the Brev L40S originally
+planned. This is a deliberate deviation, not a Brev failure.
+
+**Why deferred:**
+1. The bake-off (notebooks/03_embedding_bakeoff.ipynb) established that
+   mpnet encodes ~500 abstracts in ~28 s on Mac CPU (CPU-forced, 2 torch
+   threads). Extrapolating gives ~1.5 hr for 100 k papers; the actual run
+   took 6.3 hr (CPU contention from other workloads on the host).
+2. Brev's L40S would have completed in ~25 min wall-clock at ~$0.50–$1,
+   but the local path costs $0 and skips first-run risk of any Brev
+   script bugs (`scripts/brev_embed.sh` has not yet been executed
+   end-to-end against a billed GPU).
+3. Recorded in `data/v1/embeddings.parquet.run.json` via the sidecar's
+   `config.gpu_model = "cpu"` and `config.device = "cpu"` fields.
+
+**Credit balance:** no Brev minutes were spent during V1-S05.
+
+**Carryover for V1-S06+:** `scripts/brev_embed.sh` is staged and
+syntax-checked but **never executed**. The first session that needs
+multi-hour GPU compute (likely V1-S08 attention / V1-S15 GNN training)
+should run `brev_embed.sh` first as a paid smoke against a real L40S
+before depending on it.

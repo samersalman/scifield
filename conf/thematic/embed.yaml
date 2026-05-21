@@ -1,0 +1,23 @@
+# Selected by V1-S05 bake-off (notebooks/03_embedding_bakeoff.ipynb).
+# Pre-bake-off default = mpnet. Notebook will rewrite this file with the winner
+# and pin `model.revision` to a commit SHA.
+model:
+  name: all-mpnet-base-v2                  # one of: all-mpnet-base-v2 | bge-large-en-v1.5 | nomic-embed-text-v1
+  hf_id: sentence-transformers/all-mpnet-base-v2
+  revision: e8c3b32edf5434bc2275fc9bab85f82640a19130   # bake-off winner (V1-S05); HF commit SHA pinned 2026-05-20
+  max_seq_length: 384
+  normalize: true
+batch_size: 64
+input:
+  duckdb_path: data/v1/papers.duckdb
+  table: papers
+  filter: "abstract IS NOT NULL AND length(abstract) > 50"
+output:
+  parquet_path: data/v1/embeddings.parquet
+  dtype: float16
+faiss:
+  index_path: data/v1/faiss.index
+  pmid_map_path: data/v1/faiss_pmid_map.parquet
+  M: 32
+  efConstruction: 200
+  efSearch: 64

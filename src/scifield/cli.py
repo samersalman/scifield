@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from pathlib import Path
 from statistics import mean
 from typing import Any, cast
@@ -36,6 +37,12 @@ from scifield.corpus import (
 )
 from scifield.corpus.pubmed_demo import fetch_demo_papers
 from scifield.repro import record_run
+from scifield.thematic import (
+    build_faiss_hnsw,
+    make_embedder,
+    write_index,
+    write_pmid_map,
+)
 
 app = typer.Typer(
     name="scifield",
@@ -355,6 +362,246 @@ def enrich(
         f"views={','.join(registered) or '-'}"
     )
     typer.echo(summary)
+
+
+@app.command()
+def embed(
+    config: str = typer.Option(
+        "config",
+        "--config",
+        "-c",
+        help="Hydra config name (composition root); reads cfg.thematic.*",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        help="Smoke-test cap: encode only the first N abstract-bearing rows.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Print the row count that would be encoded and exit without loading the model.",
+    ),
+    device: str | None = typer.Option(
+        None,
+        "--device",
+        help="Override sentence-transformers device (e.g. 'cpu', 'cuda', 'mps').",
+    ),
+    batch_size_override: int | None = typer.Option(
+        None,
+        "--batch-size",
+        help="Override cfg.thematic.batch_size.",
+    ),
+) -> None:
+    """Encode abstract-bearing papers into a Parquet of fp16 embeddings (V1-S05)."""
+    import duckdb
+    import numpy as np
+
+    cfg = _load_config(config)
+    thematic = cfg.thematic
+
+    duckdb_path = Path(str(thematic.input.duckdb_path))
+    table = str(thematic.input.table)
+    filter_clause = str(thematic.input.filter)
+    if not duckdb_path.exists():
+        typer.echo(f"papers DuckDB not found at {duckdb_path}; run `scifield harvest` first.")
+        raise typer.Exit(code=1)
+
+    limit_clause = f"LIMIT {int(limit)}" if limit is not None else ""
+    sql = (
+        f"SELECT CAST(pmid AS BIGINT) AS pmid, title, abstract FROM {table} "
+        f"WHERE {filter_clause} ORDER BY pmid {limit_clause}"
+    ).strip()
+
+    con = duckdb.connect(str(duckdb_path), read_only=True)
+    try:
+        arrow_tbl = con.execute(sql).fetch_arrow_table()
+    finally:
+        con.close()
+
+    n_papers = arrow_tbl.num_rows
+    if n_papers == 0:
+        typer.echo("no abstract-bearing papers matched filter")
+        raise typer.Exit(code=1)
+
+    if dry_run:
+        typer.echo(
+            f"dry_run=True  n_papers={n_papers}  model={thematic.model.name}  "
+            f"output={thematic.output.parquet_path}"
+        )
+        raise typer.Exit(code=0)
+
+    pmids_list = arrow_tbl.column("pmid").to_pylist()
+    titles = arrow_tbl.column("title").to_pylist()
+    abstracts = arrow_tbl.column("abstract").to_pylist()
+    texts = [f"{(t or '')}. {(a or '')}" for t, a in zip(titles, abstracts, strict=False)]
+
+    model_name = str(thematic.model.name)
+    model_revision = str(thematic.model.revision)
+    batch_size = (
+        int(batch_size_override) if batch_size_override is not None else int(thematic.batch_size)
+    )
+    max_seq_length = int(thematic.model.max_seq_length)
+    dtype_str = str(thematic.output.dtype)
+    if dtype_str not in {"float16", "float32"}:
+        typer.echo(f"unsupported output.dtype {dtype_str!r}; must be 'float16' or 'float32'")
+        raise typer.Exit(code=2)
+    np_dtype = np.float16 if dtype_str == "float16" else np.float32
+
+    embedder = make_embedder(model_name, revision=model_revision, device=device)
+    # Set on the public attribute; the embedder's lazy loader propagates this
+    # to the underlying SentenceTransformer on first encode().
+    embedder.max_seq_length = max_seq_length
+
+    import sentence_transformers
+    import torch
+
+    t0 = time.perf_counter()
+    vectors = embedder.encode(texts, batch_size=batch_size)
+    runtime_s = time.perf_counter() - t0
+
+    vectors = vectors.astype(np_dtype, copy=False)
+    dim = int(vectors.shape[1])
+
+    out_path = Path(str(thematic.output.parquet_path))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    pa_value_type = pa.float16() if dtype_str == "float16" else pa.float32()
+    try:
+        list_type = pa.list_(pa_value_type, list_size=dim)
+    except TypeError:  # pragma: no cover - older pyarrow without FixedSizeList kw
+        list_type = pa.list_(pa_value_type)
+
+    flat = pa.array(vectors.reshape(-1), type=pa_value_type)
+    embedding_arr = pa.FixedSizeListArray.from_arrays(flat, dim)
+    embedding_arr = embedding_arr.cast(list_type)
+
+    out_table = pa.table(
+        {
+            "pmid": pa.array(pmids_list, type=pa.int64()),
+            "embedding": embedding_arr,
+            "model_name": pa.array([model_name] * n_papers, type=pa.string()),
+        }
+    )
+    pq.write_table(out_table, out_path)
+
+    gpu_model = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
+    sidecar_config = {
+        "model_name": model_name,
+        "model_revision": model_revision,
+        "sentence_transformers_version": sentence_transformers.__version__,
+        "torch_version": torch.__version__,
+        "batch_size": batch_size,
+        "max_seq_length": max_seq_length,
+        "n_papers": n_papers,
+        "total_runtime_s": round(runtime_s, 3),
+        "gpu_model": gpu_model,
+        "device": device or "auto",
+    }
+    record_run(
+        artifact_path=out_path,
+        inputs={"papers_duckdb": duckdb_path},
+        config=sidecar_config,
+    )
+
+    typer.echo(
+        f"n_papers={n_papers}  model={model_name}  dim={dim}  "
+        f"runtime={runtime_s:.1f}s  output={out_path}"
+    )
+
+
+@app.command("faiss-build")
+def faiss_build(
+    config: str = typer.Option(
+        "config",
+        "--config",
+        "-c",
+        help="Hydra config name (composition root); reads cfg.thematic.faiss.*",
+    ),
+    embeddings: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--embeddings",
+        help="Override cfg.thematic.output.parquet_path.",
+    ),
+    out: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--out",
+        help="Override cfg.thematic.faiss.index_path.",
+    ),
+) -> None:
+    """Build a FAISS HNSW index over the embeddings Parquet (V1-S05)."""
+    import faiss
+    import numpy as np
+
+    cfg = _load_config(config)
+    thematic = cfg.thematic
+
+    embeddings_path = (
+        Path(str(embeddings)) if embeddings else Path(str(thematic.output.parquet_path))
+    )
+    out_path = Path(str(out)) if out else Path(str(thematic.faiss.index_path))
+    pmid_map_path = Path(str(thematic.faiss.pmid_map_path))
+
+    if not embeddings_path.exists():
+        typer.echo(f"embeddings parquet not found at {embeddings_path}")
+        raise typer.Exit(code=1)
+
+    table = pq.read_table(embeddings_path)
+    pmids = table.column("pmid").to_numpy(zero_copy_only=False).astype(np.int64, copy=False)
+
+    embedding_col = table.column("embedding")
+    # Try the fast FixedSizeList path first; fall back to per-element conversion.
+    arr: np.ndarray
+    try:
+        chunks = []
+        for chunk in embedding_col.chunks:
+            values = chunk.values.to_numpy(zero_copy_only=False).astype(np.float32, copy=False)
+            list_size = chunk.type.list_size  # FixedSizeList only
+            chunks.append(values.reshape(-1, list_size))
+        arr = np.concatenate(chunks, axis=0) if len(chunks) > 1 else chunks[0]
+    except (AttributeError, TypeError):
+        # Generic LIST<...> fallback: convert per row.
+        py_lists = embedding_col.to_pylist()
+        arr = np.asarray(py_lists, dtype=np.float32)
+
+    if arr.ndim != 2:
+        typer.echo(f"embedding column must produce a 2-D array; got shape {arr.shape}")
+        raise typer.Exit(code=1)
+
+    M = int(thematic.faiss.M)
+    ef_construction = int(thematic.faiss.efConstruction)
+    ef_search = int(thematic.faiss.efSearch)
+
+    index = build_faiss_hnsw(arr, M=M, ef_construction=ef_construction, ef_search=ef_search)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    pmid_map_path.parent.mkdir(parents=True, exist_ok=True)
+    write_index(index, out_path)
+    write_pmid_map(pmids, pmid_map_path)
+
+    sidecar_config = {
+        "M": M,
+        "efConstruction": ef_construction,
+        "efSearch": ef_search,
+        "dim": int(arr.shape[1]),
+        "n_vectors": int(arr.shape[0]),
+        "faiss_version": faiss.__version__,
+    }
+    record_run(
+        artifact_path=out_path,
+        inputs={"embeddings_parquet": embeddings_path},
+        config=sidecar_config,
+    )
+    record_run(
+        artifact_path=pmid_map_path,
+        inputs={"embeddings_parquet": embeddings_path},
+        config=sidecar_config,
+    )
+
+    typer.echo(
+        f"ntotal={index.ntotal}  dim={int(arr.shape[1])}  M={M}  "
+        f"index={out_path}  pmid_map={pmid_map_path}"
+    )
 
 
 def main() -> None:

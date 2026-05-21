@@ -64,6 +64,7 @@ def record_run(
         "git_sha": _git_sha(),
         "git_dirty": _git_dirty(),
         "config_hash": config_hash,
+        "config": config,
         "input_hashes": input_hashes,
         "software_versions": {
             "python": platform.python_version(),

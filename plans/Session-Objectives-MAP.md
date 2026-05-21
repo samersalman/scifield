@@ -240,6 +240,15 @@ Note: the existing `Version 1/` and `Version 2/` folders should be matched by a 
 
 **Stop conditions.** If no model materially outperforms `all-mpnet-base-v2` on your bake-off, default to mpnet (you know its behavior). Document this in the bake-off report.
 
+**Status: ✓ with notes (2026-05-21).**
+- Bake-off complete: all 3 candidates (mpnet, bge-large-en-v1.5, nomic-embed-text-v1) encoded the 500-paper MeSH-stratified sample on Mac CPU. kNN@10 precision: mpnet 0.149 / bge 0.161 / nomic 0.163. **Stop-condition guard fired:** best candidate (nomic) beat mpnet by Δ=0.013 < 0.03 threshold → defaulted to mpnet per plan D6. mpnet also had the highest intra/inter cosine separation (0.107 vs 0.035 / 0.033).
+- `conf/thematic/embed.yaml` pinned to `revision: e8c3b32edf5434bc2275fc9bab85f82640a19130`.
+- Full-corpus embeddings: **99,938 abstract-bearing papers × 768d (fp16)** at `data/v1/embeddings.parquet` (142 MB). FAISS HNSW index at `data/v1/faiss.index` (335 MB), `ntotal=99,938`, M=32, efConstruction=200, efSearch=64. Both sidecars contain all D4 fields + matching git_sha + config_hash.
+- **Deviation: ran locally on Mac CPU rather than Brev L40S.** Bake-off showed mpnet was CPU-viable; chose to save ~$1 and skip first-run risk of unproven `scripts/brev_embed.sh`. Documented in `docs/operations/brev.md` "V1-S05 (2026-05-21): Brev deferred, ran locally" and in `embeddings.parquet.run.json` under `deviations`. Encoding took 6.3 hr wall-clock (CPU contended with other host workloads); `brev_embed.sh` is committed for future GPU sessions but never executed end-to-end.
+- Spot-check (notebook §6): 10 hand-chosen PMIDs (one per journal) return semantically coherent top-5 NN. Highlights: posterior tibial slope → tibial slope papers (sim 0.86–0.91); disc nucleus-annulus → ISSLS disc-mechanics papers (sim 0.73–0.77); amputation disparities → racial/gender variation in amputation (sim 0.76–0.83); scapula tilt editorial → source paper at sim 0.857.
+- Acceptance: full pytest 77 passed / 1 skipped, pre-commit all-green, every sidecar has matching git_sha + config_hash, no large binaries staged.
+- Carryover for V1-S06: `data/v1/papers.duckdb` has duplicate PMIDs (same paper indexed in multiple journal-year buckets when journal TA-terms overlap). Spot-check exposed this via duplicate rows for PMID 29100772. V1-S06 / V1-S15 should dedupe at the boundary.
+
 ---
 
 ### V1-S06 — BERTopic pipeline + hierarchical merging + coherence + Gate G1 report
