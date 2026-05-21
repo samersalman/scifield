@@ -1,0 +1,28 @@
+{
+  "number_of_results": 2,
+  "time_taken": 12,
+  "items": [
+    {
+      "organization": {
+        "id": "https://ror.org/00f54p054",
+        "name": "Stanford University",
+        "country": {"country_code": "US", "country_name": "United States"},
+        "types": ["Education"]
+      },
+      "score": 0.97,
+      "matching_type": "FUZZYMATCH",
+      "substring": "Stanford University"
+    },
+    {
+      "organization": {
+        "id": "https://ror.org/03kk7td41",
+        "name": "Stanford Health Care",
+        "country": {"country_code": "US", "country_name": "United States"},
+        "types": ["Healthcare"]
+      },
+      "score": 0.74,
+      "matching_type": "FUZZYMATCH",
+      "substring": "Stanford"
+    }
+  ]
+}

@@ -1,0 +1,166 @@
+{
+  "meta": {
+    "count": 3,
+    "db_response_time_ms": 12,
+    "page": 1,
+    "per_page": 50
+  },
+  "results": [
+    {
+      "id": "https://openalex.org/W4000000001",
+      "doi": "https://doi.org/10.1000/work1",
+      "title": "Arthroscopic rotator cuff repair: outcomes at 5 years",
+      "ids": {
+        "openalex": "https://openalex.org/W4000000001",
+        "doi": "https://doi.org/10.1000/work1",
+        "pmid": "https://pubmed.ncbi.nlm.nih.gov/40000001"
+      },
+      "publication_year": 2024,
+      "publication_date": "2024-03-15",
+      "type": "article",
+      "language": "en",
+      "is_retracted": false,
+      "open_access": {"is_oa": true, "oa_status": "green"},
+      "cited_by_count": 12,
+      "concepts": [
+        {"id": "https://openalex.org/C1", "display_name": "Surgery", "score": 0.92},
+        {"id": "https://openalex.org/C2", "display_name": "Rotator cuff", "score": 0.84}
+      ],
+      "authorships": [
+        {
+          "author_position": "first",
+          "author": {
+            "id": "https://openalex.org/A1000000001",
+            "display_name": "Jane Smith",
+            "orcid": "https://orcid.org/0000-0001-2345-6789"
+          },
+          "institutions": [
+            {
+              "id": "https://openalex.org/I100",
+              "display_name": "Stanford University",
+              "ror": "https://ror.org/00f54p054",
+              "country_code": "US",
+              "type": "education"
+            }
+          ],
+          "raw_affiliation_strings": ["Department of Orthopaedics, Stanford University, Stanford, CA, USA"]
+        },
+        {
+          "author_position": "middle",
+          "author": {
+            "id": "https://openalex.org/A1000000002",
+            "display_name": "John Doe",
+            "orcid": null
+          },
+          "institutions": [
+            {
+              "id": "https://openalex.org/I200",
+              "display_name": "Mayo Clinic",
+              "ror": "https://ror.org/02bcc5e25",
+              "country_code": "US",
+              "type": "healthcare"
+            }
+          ],
+          "raw_affiliation_strings": ["Mayo Clinic, Rochester, MN"]
+        },
+        {
+          "author_position": "last",
+          "author": {
+            "id": "https://openalex.org/A1000000003",
+            "display_name": "Alice Lee",
+            "orcid": "https://orcid.org/0000-0002-1111-2222"
+          },
+          "institutions": [
+            {
+              "id": null,
+              "display_name": "Some Tiny Clinic of Nowhere",
+              "ror": null,
+              "country_code": "US",
+              "type": null
+            }
+          ],
+          "raw_affiliation_strings": ["Some Tiny Clinic of Nowhere, Springfield, USA"]
+        }
+      ],
+      "referenced_works": [
+        "https://openalex.org/W3000000001",
+        "https://openalex.org/W3000000002",
+        "https://openalex.org/W3000000003"
+      ]
+    },
+    {
+      "id": "https://openalex.org/W4000000002",
+      "doi": null,
+      "title": "Editorial: where do we go from here?",
+      "ids": {
+        "openalex": "https://openalex.org/W4000000002",
+        "pmid": "https://pubmed.ncbi.nlm.nih.gov/40000002"
+      },
+      "publication_year": 2023,
+      "publication_date": "2023-08-01",
+      "type": "editorial",
+      "language": "en",
+      "is_retracted": false,
+      "open_access": {"is_oa": false, "oa_status": "closed"},
+      "cited_by_count": 0,
+      "concepts": [],
+      "authorships": [
+        {
+          "author_position": "first",
+          "author": {
+            "id": "https://openalex.org/A1000000004",
+            "display_name": "Bob Johnson",
+            "orcid": null
+          },
+          "institutions": [],
+          "raw_affiliation_strings": []
+        }
+      ],
+      "referenced_works": []
+    },
+    {
+      "id": "https://openalex.org/W4000000003",
+      "doi": "https://doi.org/10.1000/work3",
+      "title": "Hip arthroplasty registry data 1995-2020",
+      "ids": {
+        "openalex": "https://openalex.org/W4000000003",
+        "doi": "https://doi.org/10.1000/work3",
+        "pmid": "https://pubmed.ncbi.nlm.nih.gov/40000003"
+      },
+      "publication_year": 2022,
+      "publication_date": "2022-11-20",
+      "type": "article",
+      "language": "en",
+      "is_retracted": false,
+      "open_access": {"is_oa": true, "oa_status": "gold"},
+      "cited_by_count": 45,
+      "concepts": [
+        {"id": "https://openalex.org/C3", "display_name": "Arthroplasty", "score": 0.95}
+      ],
+      "authorships": [
+        {
+          "author_position": "first",
+          "author": {
+            "id": null,
+            "display_name": "Anonymous Collective",
+            "orcid": null
+          },
+          "institutions": [
+            {
+              "id": "https://openalex.org/I300",
+              "display_name": "Karolinska Institute",
+              "ror": "https://ror.org/056d84691",
+              "country_code": "SE",
+              "type": "education"
+            }
+          ],
+          "raw_affiliation_strings": ["Karolinska Institutet, Stockholm, Sweden"]
+        }
+      ],
+      "referenced_works": [
+        "https://openalex.org/W3000000010",
+        "https://openalex.org/W3000000011"
+      ]
+    }
+  ]
+}

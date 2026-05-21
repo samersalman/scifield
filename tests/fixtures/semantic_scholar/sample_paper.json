@@ -1,0 +1,41 @@
+[
+  {
+    "paperId": "SSID_aaaa1111",
+    "externalIds": {
+      "PubMed": "40000001",
+      "DOI": "10.1000/work1"
+    },
+    "citationCount": 13,
+    "referenceCount": 32,
+    "references": [
+      {
+        "citedPaper": {
+          "paperId": "SSID_ref01",
+          "externalIds": {"PubMed": "39000001"}
+        },
+        "intents": ["background"],
+        "isInfluential": false,
+        "contexts": ["Prior work established baseline."]
+      },
+      {
+        "citedPaper": {
+          "paperId": "SSID_ref02",
+          "externalIds": {"PubMed": "39000002"}
+        },
+        "intents": ["methodology", "result"],
+        "isInfluential": true,
+        "contexts": ["We adapt the method described by..."]
+      }
+    ]
+  },
+  {
+    "paperId": "SSID_aaaa2222",
+    "externalIds": {
+      "PubMed": "40000002"
+    },
+    "citationCount": 0,
+    "referenceCount": 0,
+    "references": []
+  },
+  null
+]

@@ -49,3 +49,38 @@ output:
   duckdb_path: "data/v1/papers.duckdb"
   manifest_dir: "data/v1/manifests"
   log_dir: "data/v1/logs"
+
+enrichment:
+  # OPENALEX_EMAIL is read from env at runtime; required (polite pool).
+  # SEMANTIC_SCHOLAR_API_KEY is read from env at runtime; optional.
+  output:
+    enrichment_dir: "data/v1/enrichment"
+    cache_dir: "data/v1/enrichment/cache"
+    manifest_dir: "data/v1/enrichment/manifests"
+    log_dir: "data/v1/enrichment/logs"
+
+  openalex:
+    base_url: "https://api.openalex.org"
+    batch_size: 50          # PMIDs per filter call (OpenAlex cap)
+    rate_limit: 8           # req/s — polite pool tolerates 10, leave headroom
+    request_timeout_s: 60
+    max_retries: 5
+
+  semantic_scholar:
+    base_url: "https://api.semanticscholar.org/graph/v1"
+    batch_size: 100         # PMIDs per /paper/batch call
+    rate_limit_with_key: 1  # S2 individual-key tier: 1 req/s cumulative
+    rate_limit_no_key: 1    # public tier: also 1 req/s
+    request_timeout_s: 60
+    max_retries: 5
+
+  ror:
+    base_url: "https://api.ror.org"
+    rate_limit: 5           # req/s — ROR is unauthenticated and permissive
+    request_timeout_s: 30
+    max_retries: 4
+    min_match_score: 0.85
+
+  authors:
+    # Hash salt for the heuristic disambiguation layer (Layer 3).
+    heuristic_salt: "scifield_v1"
