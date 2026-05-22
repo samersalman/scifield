@@ -114,3 +114,26 @@ syntax-checked but **never executed**. The first session that needs
 multi-hour GPU compute (likely V1-S08 attention / V1-S15 GNN training)
 should run `brev_embed.sh` first as a paid smoke against a real L40S
 before depending on it.
+
+---
+
+## V1-S06 (2026-05-21): no Brev needed
+
+The topic-modelling step (UMAP + HDBSCAN + BERTopic + Gensim coherence) ran
+locally on the Mac CPU. The 3×2 sweep + final fit landed inside ~1 hr per
+plan-S06; UMAP is single-process by design and HDBSCAN benefits little
+from GPU on a corpus of ~89k vectors. No Brev launch this session — the
+GPU credit budget reserved for Phase 2 was unused.
+
+---
+
+## V1-S06b (2026-05-21): no Brev needed; ran locally on Mac CPU
+
+The post-G1 `RETUNE_CLUSTERING` session (plan-S06b) re-fit the BERTopic
+pipeline against the same V1-S05 embeddings (no re-embed), so it had the
+same cost profile as V1-S06: pure CPU, no GPU benefit. Phase 1 mini-sweep
+(4 configs, ~6.5 min before the V1-S06 sweep-parquet serialization defect
+surfaced and aborted the run; see G1 retune-results append) plus phase 2
+widen sweep (9 configs + final fit + hierarchy = 17.0 min) totalled
+~23.5 min wall on the same 14-thread Mac host. No Brev launch this
+session. Credit balance unchanged.

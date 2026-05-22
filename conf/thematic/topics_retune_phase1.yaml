@@ -1,0 +1,78 @@
+# =============================================================================
+# SciField V1-S06b — Topic Modelling Retune (phase 1, focused 2×2 mini-sweep)
+# Date: 2026-05-21
+# Spec: plans/plan-S06b.md (steps 2–3), G1 gate retune lever order
+#       (`docs/gates/G1_topic_interpretability.md` § Retune plan).
+#
+# This config drives a focused mini-sweep that isolates the two G1-flagged
+# levers Samer prioritized first: explicit `nr_topics` (vs. `auto`) and
+# `hdbscan_min_samples=10` (vs. None → defaults to min_cluster_size). All
+# other knobs are pinned to the V1-S06 chosen config so the retune is
+# strictly attributable to those two axes.
+#
+# Lever order (mirrors the G1 doc, § Retune plan):
+#   1. Joint 2×2 retune at `umap_n_neighbors=15`, `min_cluster_size=80`:
+#      `nr_topics ∈ {150, auto}` × `hdbscan_min_samples ∈ {10, None}`.
+#   2. If noise ≥ 20% or leaf count < 100 after this sweep, plan-S06b §5
+#      widens to `min_cluster_size ∈ {30, 60, 90}` × `min_samples ∈ {5,10,20}`
+#      via `conf/thematic/topics_retune_phase2.yaml`.
+#   3. If both phases fail, escalate to RETUNE_EMBEDDING (bge-large) — that
+#      is the escape hatch, not a lever inside V1-S06b.
+#
+# Reuses the V1-S06 input/output paths so the V1-S06 artifacts are
+# overwritten in place; the prior run is recoverable via git history and
+# the pinned `config_hash=5a1ed67d…` / `git_sha=eebe89e7…` in the V1-S06
+# sidecars.
+# =============================================================================
+
+software:
+  bertopic: null
+  umap-learn: null
+  hdbscan: null
+  gensim: null
+  numpy: null
+
+input:
+  duckdb_path: data/v1/papers.duckdb
+  view: papers_distinct
+  embeddings_parquet: data/v1/embeddings.parquet
+
+output:
+  topics_parquet: data/v1/topics.parquet
+  hierarchy_parquet: data/v1/topic_hierarchy.parquet
+  sweep_parquet: data/v1/topic_sweep.parquet
+  model_dir: models/v1/bertopic_v1
+
+hierarchy:
+  target_mid_levels: 20
+  target_top_levels: 6
+
+coherence:
+  top_n: 10
+  metrics: [c_npmi, c_v]
+
+defaults_config:
+  umap_n_neighbors: 15
+  umap_n_components: 5
+  umap_min_dist: 0.0
+  umap_metric: cosine
+  hdbscan_min_cluster_size: 80
+  hdbscan_min_samples: 10
+  hdbscan_cluster_selection_method: eom
+  nr_topics: 150
+  random_state: 42
+  vectorizer_min_df: 10
+  vectorizer_ngram_max: 2
+
+sweep:
+  enabled: true
+  grid:
+    - {umap_n_neighbors: 15, hdbscan_min_cluster_size: 80, hdbscan_min_samples: 10,   nr_topics: 150}
+    - {umap_n_neighbors: 15, hdbscan_min_cluster_size: 80, hdbscan_min_samples: 10,   nr_topics: auto}
+    - {umap_n_neighbors: 15, hdbscan_min_cluster_size: 80, hdbscan_min_samples: null, nr_topics: 150}
+    - {umap_n_neighbors: 15, hdbscan_min_cluster_size: 80, hdbscan_min_samples: null, nr_topics: auto}
+  selector: npmi_top10
+  constraints:
+    n_leaf_topics_min: 100
+    n_leaf_topics_max: 200
+    noise_fraction_max: 0.20

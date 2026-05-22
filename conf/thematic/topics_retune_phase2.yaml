@@ -1,0 +1,88 @@
+# =============================================================================
+# SciField V1-S06b — Topic Modelling Retune (phase 2, Cartesian widen)
+# Date: 2026-05-21
+# Spec: plans/plan-S06b.md (steps 5–6), G1 gate retune lever order §2
+#       (`docs/gates/G1_topic_interpretability.md` § Retune plan, step 2).
+#
+# Phase 1 (`conf/thematic/topics_retune_phase1.yaml`) settled the
+# `nr_topics ∈ {150, auto}` axis in favour of an explicit `nr_topics=150`:
+# both phase-1 `nr_topics=150` rows hit n_leaf=149 (clears the 100–200
+# leaf gate) while the two `auto` rows either reproduced the V1-S06
+# baseline (n_leaf=89, NPMI=0.224) or errored out (vectorizer max_df<min_df
+# at `min_samples=10, nr_topics=auto`). No phase-1 row cleared the
+# noise<20% gate (closest was `min_samples=10, nr_topics=150` at 0.249),
+# so plan-S06b §4 auto-widens to this Cartesian 9-grid pinned at
+# `nr_topics=150` and `umap_n_neighbors=15`, sweeping
+# `min_cluster_size ∈ {30, 60, 90}` × `min_samples ∈ {5, 10, 20}`.
+#
+# Note on phase-1 sweep parquet write defect: the V1-S06 sweep harness
+# could not serialize phase 1's mixed-type `nr_topics` (int+str) `config`
+# column to parquet (`ArrowInvalid: Could not convert 'auto' with type
+# str: tried to convert to int64`). Phase 2's grid uses only integer
+# `nr_topics`, so the defect does not recur here. The defect itself is
+# documented in the G1 retune-results append and is out of scope for
+# V1-S06b (`plans/plan-S06b.md` § "STAY IN SCOPE"); to be addressed in a
+# separate maintenance pass (likely plan-S06c).
+#
+# `defaults_config` mirrors phase 1's closest-to-constraints row
+# (`min_cluster_size=80, min_samples=10, nr_topics=150`) per plan §5 —
+# used by the final-fit step after the sweep if the chosen sweep row
+# does not already define a winner above it.
+# =============================================================================
+
+software:
+  bertopic: null
+  umap-learn: null
+  hdbscan: null
+  gensim: null
+  numpy: null
+
+input:
+  duckdb_path: data/v1/papers.duckdb
+  view: papers_distinct
+  embeddings_parquet: data/v1/embeddings.parquet
+
+output:
+  topics_parquet: data/v1/topics.parquet
+  hierarchy_parquet: data/v1/topic_hierarchy.parquet
+  sweep_parquet: data/v1/topic_sweep.parquet
+  model_dir: models/v1/bertopic_v1
+
+hierarchy:
+  target_mid_levels: 20
+  target_top_levels: 6
+
+coherence:
+  top_n: 10
+  metrics: [c_npmi, c_v]
+
+defaults_config:
+  umap_n_neighbors: 15
+  umap_n_components: 5
+  umap_min_dist: 0.0
+  umap_metric: cosine
+  hdbscan_min_cluster_size: 80
+  hdbscan_min_samples: 10
+  hdbscan_cluster_selection_method: eom
+  nr_topics: 150
+  random_state: 42
+  vectorizer_min_df: 10
+  vectorizer_ngram_max: 2
+
+sweep:
+  enabled: true
+  grid:
+    - {umap_n_neighbors: 15, hdbscan_min_cluster_size: 30, hdbscan_min_samples: 5,  nr_topics: 150}
+    - {umap_n_neighbors: 15, hdbscan_min_cluster_size: 30, hdbscan_min_samples: 10, nr_topics: 150}
+    - {umap_n_neighbors: 15, hdbscan_min_cluster_size: 30, hdbscan_min_samples: 20, nr_topics: 150}
+    - {umap_n_neighbors: 15, hdbscan_min_cluster_size: 60, hdbscan_min_samples: 5,  nr_topics: 150}
+    - {umap_n_neighbors: 15, hdbscan_min_cluster_size: 60, hdbscan_min_samples: 10, nr_topics: 150}
+    - {umap_n_neighbors: 15, hdbscan_min_cluster_size: 60, hdbscan_min_samples: 20, nr_topics: 150}
+    - {umap_n_neighbors: 15, hdbscan_min_cluster_size: 90, hdbscan_min_samples: 5,  nr_topics: 150}
+    - {umap_n_neighbors: 15, hdbscan_min_cluster_size: 90, hdbscan_min_samples: 10, nr_topics: 150}
+    - {umap_n_neighbors: 15, hdbscan_min_cluster_size: 90, hdbscan_min_samples: 20, nr_topics: 150}
+  selector: npmi_top10
+  constraints:
+    n_leaf_topics_min: 100
+    n_leaf_topics_max: 200
+    noise_fraction_max: 0.20
