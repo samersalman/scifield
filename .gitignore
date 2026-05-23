@@ -12,3 +12,4 @@ models/
 *.duckdb
 *.parquet
 /site/
+.claude/

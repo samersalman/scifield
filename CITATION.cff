@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+title: "SciField — A multi-axis framework for monitoring scientific field health"
+message: "If you use this software, please cite it using the metadata below."
+type: software
+authors:
+  - given-names: Samer
+    name-particle: G.
+    family-names: Salman
+    orcid: "https://orcid.org/0009-0007-9897-4071"
+    affiliation: "Baylor College of Medicine"
+version: "0.1.0"
+date-released: "2026-05-23"
+license: Apache-2.0
+repository-code: "https://github.com/samersalman/scifield"
+url: "https://github.com/samersalman/scifield"
+abstract: >
+  SciField is a multi-axis framework for monitoring the health of a scientific
+  field. It builds a longitudinal corpus from a defined set of journals,
+  enriches each article with thematic, epistemic, and novelty signals, and
+  uses those signals to forecast where a field is headed. Release v0.1.0
+  ships the corpus harvester, enrichment pipeline (OpenAlex / Semantic Scholar /
+  ROR / author disambiguation), embedding bake-off, FAISS HNSW index, BERTopic
+  thematic backbone (V1-S06), and the epistemic-extraction scaffolding (V1-S07)
+  with its OSF pre-registration #1.
+keywords:
+  - scientometrics
+  - bibliometrics
+  - scientific-field-monitoring
+  - topic-modeling
+  - bertopic
+  - epistemic-quality
+  - pubmed
+  - orthopedic-surgery
+  - llm-extraction
+  - pre-registration
