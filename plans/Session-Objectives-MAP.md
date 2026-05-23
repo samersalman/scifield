@@ -251,13 +251,15 @@ Note: the existing `Version 1/` and `Version 2/` folders should be matched by a 
 
 ---
 
-### V1-S06 — BERTopic pipeline + hierarchical merging + coherence + Gate G1 report
+### V1-S06 ✓ (executed; gate G1 FAILED, retune queued as V1-S06b) — BERTopic pipeline + hierarchical merging + coherence + Gate G1 report
 
 **Phase:** 2 (Thematic backbone) | **Plan ref:** §5 Phase 2 + Gate after Phase 2 | **Effort:** ~2 days | **Depends on:** V1-S05
 
 **Objective.** Produce the canonical v1 topic landscape: 100–200 leaf topics organized hierarchically into ~20 mid-level and 5–7 top-level domains. Compute coherence. Generate the gate report for human review.
 
 **Preconditions.** V1-S05 complete; FAISS index + embeddings exist.
+
+**Carryover from V1-S05 (must address before BERTopic input).** `data/v1/papers.duckdb`'s `papers` view contains 13,070 PMIDs with duplicate byte-identical rows (root cause: V1-S03 harvest wrote duplicates inside single (journal, year) buckets — likely PubMed eSearch pagination overlap or OR'd TA-term clauses). The V1-S05 embeddings.parquet inherited this: 99,938 vector rows = ~89,230 distinct PMIDs + ~10,708 duplicate-PMID vector rows. Before feeding embeddings to UMAP/HDBSCAN, dedupe on PMID at one of: (a) `papers` view (preferred — fix once, all phases benefit), (b) FAISS row map filter, or (c) embeddings-parquet read step in `topics.py`. Verify duplicates are still byte-identical (`SELECT COUNT(*) FROM (...) HAVING COUNT(DISTINCT abstract) > 1` should return 0) before using `ANY_VALUE`/`SELECT DISTINCT`; if not, tiebreak by longest abstract.
 
 **In scope.**
 - `src/scifield/thematic/topics.py`: BERTopic pipeline (UMAP → HDBSCAN → c-TF-IDF), parameter sweep harness, hierarchical merging via BERTopic's `hierarchical_topics`.
