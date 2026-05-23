@@ -2,8 +2,9 @@
 
 **Authors:** Samer G. Salman, Baylor College of Medicine (ORCID: [0009-0007-9897-4071](https://orcid.org/0009-0007-9897-4071))
 **Date drafted:** 2026-05-22
-**OSF DOI / URL:** _(to be filled after submission — see §11 below)_
-**Project commit SHA at submission:** _(to be filled at submission time)_
+**OSF DOI / URL:** [10.17605/OSF.IO/8ZJHD](https://doi.org/10.17605/OSF.IO/8ZJHD) (registration page: https://osf.io/8zjhd/)
+**OSF parent project:** [10.17605/OSF.IO/RXYZ4](https://doi.org/10.17605/OSF.IO/RXYZ4) (project page: https://osf.io/rxyz4/)
+**Project commit SHA at submission:** `c113dab`
 **Codebase:** https://github.com/samersalman/scifield  (Zenodo DOI minted at release v0.1.0 — 10.5281/zenodo.20360023 | concept DOI: https://doi.org/10.5281/zenodo.20360022)
 **Plan reference:** `plans/2026-05-22-v1-s07-epistemic-prep.md`
 **Master plan reference:** `plan/scifield_plan.md` §5 Phase 3
