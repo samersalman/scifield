@@ -4,7 +4,7 @@
 **Date drafted:** 2026-05-22
 **OSF DOI / URL:** _(to be filled after submission — see §11 below)_
 **Project commit SHA at submission:** _(to be filled at submission time)_
-**Codebase:** https://github.com/samersalman/scifield  (Zenodo DOI minted at release v0.1.0 — paste here once available)
+**Codebase:** https://github.com/samersalman/scifield  (Zenodo DOI minted at release v0.1.0 — 10.5281/zenodo.20360023 | concept DOI: https://doi.org/10.5281/zenodo.20360022)
 **Plan reference:** `plans/2026-05-22-v1-s07-epistemic-prep.md`
 **Master plan reference:** `plan/scifield_plan.md` §5 Phase 3
 
