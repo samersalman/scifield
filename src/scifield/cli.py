@@ -50,6 +50,13 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+epistemic_app = typer.Typer(
+    name="epistemic",
+    help="V1-S07 epistemic-quality extraction (schema, sampling, labeling, pilot).",
+    no_args_is_help=True,
+)
+app.add_typer(epistemic_app, name="epistemic")
+
 
 def _load_config(name: str) -> DictConfig:
     """Compose a Hydra config from the repo's `conf/` directory."""
@@ -58,6 +65,21 @@ def _load_config(name: str) -> DictConfig:
         GlobalHydra.instance().clear()
     with hydra.initialize_config_dir(version_base="1.3", config_dir=str(conf_dir)):
         cfg = hydra.compose(config_name=name)
+    return cast(DictConfig, cfg)
+
+
+def _load_topics_config(path: Path | None = None) -> DictConfig:
+    """Load conf/thematic/topics.yaml directly via OmegaConf."""
+    if path is None:
+        path = Path(__file__).resolve().parents[2] / "conf" / "thematic" / "topics.yaml"
+    cfg = OmegaConf.load(path)
+    return cast(DictConfig, cfg)
+
+
+def _load_epistemic_config(name: str = "v1") -> DictConfig:
+    """Load conf/epistemic/<name>.yaml directly via OmegaConf (flat — no Hydra group nesting)."""
+    path = Path(__file__).resolve().parents[2] / "conf" / "epistemic" / f"{name}.yaml"
+    cfg = OmegaConf.load(path)
     return cast(DictConfig, cfg)
 
 
@@ -601,6 +623,526 @@ def faiss_build(
     typer.echo(
         f"ntotal={index.ntotal}  dim={int(arr.shape[1])}  M={M}  "
         f"index={out_path}  pmid_map={pmid_map_path}"
+    )
+
+
+@app.command()
+def topics(
+    config: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--config",
+        "-c",
+        help="Override path to topics config YAML. Defaults to conf/thematic/topics.yaml.",
+    ),
+    skip_sweep: bool = typer.Option(
+        False,
+        "--skip-sweep",
+        help="Skip the sweep harness and fit a single config from defaults_config.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        help="Smoke-test cap: use only the first N deduped (pmid, embedding) rows.",
+    ),
+) -> None:
+    """Fit the V1-S06 BERTopic pipeline (V1-S06)."""
+    import importlib.metadata as _im
+    from dataclasses import asdict as _asdict
+
+    import duckdb
+    import numpy as np
+    import pandas as pd
+
+    from scifield.thematic import (
+        build_hierarchy,
+        ensure_papers_distinct_view,
+        fit_topics,
+        integrity_check_v1_carryover,
+        load_deduped_embeddings,
+        tokenise_for_coherence,
+    )
+    from scifield.thematic import sweep as run_sweep
+    from scifield.thematic.topics import TopicConfig
+
+    cfg = _load_topics_config(config)
+    repo_root = Path(__file__).resolve().parents[2]
+    topics_yaml_path = Path(config) if config else repo_root / "conf" / "thematic" / "topics.yaml"
+
+    duckdb_path = Path(str(cfg.input.duckdb_path))
+    embeddings_parquet = Path(str(cfg.input.embeddings_parquet))
+    if not duckdb_path.exists():
+        typer.echo(f"papers DuckDB not found at {duckdb_path}; run `scifield harvest` first.")
+        raise typer.Exit(code=1)
+    if not embeddings_parquet.exists():
+        typer.echo(
+            f"embeddings parquet not found at {embeddings_parquet}; run `scifield embed` first."
+        )
+        raise typer.Exit(code=1)
+
+    t_total_start = time.perf_counter()
+
+    # papers_distinct is a non-destructive VIEW; creating it requires write access,
+    # so we open read-write for the dedup helpers, then reopen read-only for SELECTs.
+    con_rw = duckdb.connect(str(duckdb_path))
+    try:
+        integrity = integrity_check_v1_carryover(con_rw)
+        typer.echo(
+            f"integrity: papers_total={integrity['papers_total']}  "
+            f"papers_distinct={integrity['papers_distinct']}  "
+            f"papers_duplicate_pmids={integrity['papers_duplicate_pmids']}"
+        )
+        baseline_duplicates = 13070
+        observed_dups = int(integrity["papers_duplicate_pmids"])
+        if abs(observed_dups - baseline_duplicates) > max(500, baseline_duplicates // 4):
+            typer.echo(
+                f"WARNING: papers_duplicate_pmids={observed_dups} diverges from V1-S05 "
+                f"baseline ({baseline_duplicates}). Proceeding; inspect input_hashes in sidecar."
+            )
+        ensure_papers_distinct_view(con_rw)
+    finally:
+        con_rw.close()
+
+    con = duckdb.connect(str(duckdb_path), read_only=True)
+    try:
+        pmids, embeddings = load_deduped_embeddings(embeddings_parquet)
+        if limit is not None:
+            pmids = pmids[: int(limit)]
+            embeddings = embeddings[: int(limit)]
+        if pmids.shape[0] == 0:
+            typer.echo("no deduped embeddings to fit")
+            raise typer.Exit(code=1)
+
+        pmid_list = pmids.tolist()
+        arrow_tbl = con.execute(
+            "SELECT CAST(pmid AS BIGINT) AS pmid, title, abstract "
+            "FROM papers_distinct WHERE CAST(pmid AS BIGINT) IN (SELECT UNNEST(?))",
+            [pmid_list],
+        ).fetch_arrow_table()
+    finally:
+        con.close()
+
+    pm_rows = arrow_tbl.to_pylist()
+    by_pmid: dict[int, tuple[str, str]] = {
+        int(r["pmid"]): (r.get("title") or "", r.get("abstract") or "") for r in pm_rows
+    }
+    documents: list[str] = []
+    missing: list[int] = []
+    for pid in pmid_list:
+        ta = by_pmid.get(int(pid))
+        if ta is None:
+            missing.append(int(pid))
+            continue
+        documents.append(f"{ta[0]}. {ta[1]}")
+    if missing:
+        typer.echo(
+            f"ERROR: {len(missing)} pmids in embeddings have no row in papers_distinct "
+            f"(first 5: {missing[:5]})"
+        )
+        raise typer.Exit(code=1)
+
+    coherence_texts = tokenise_for_coherence(documents)
+
+    defaults_dict = cast(dict[str, Any], OmegaConf.to_container(cfg.defaults_config, resolve=True))
+
+    selector = str(cfg.sweep.selector)
+    constraints = cast(dict[str, Any], OmegaConf.to_container(cfg.sweep.constraints, resolve=True))
+    n_leaf_min = int(constraints["n_leaf_topics_min"])
+    n_leaf_max = int(constraints["n_leaf_topics_max"])
+    noise_max = float(constraints["noise_fraction_max"])
+
+    do_sweep = (not skip_sweep) and bool(cfg.sweep.enabled)
+    sweep_wall = 0.0
+    chosen_row_index: int | None = None
+    constraints_unmet = False
+    sweep_df = None
+
+    if do_sweep:
+        grid_overrides = cast(
+            list[dict[str, Any]],
+            OmegaConf.to_container(cfg.sweep.grid, resolve=True),
+        )
+        grid: list[TopicConfig] = []
+        for override in grid_overrides:
+            merged = dict(defaults_dict)
+            merged.update(override)
+            grid.append(TopicConfig(**merged))
+
+        typer.echo(f"sweep: {len(grid)} configs")
+        t_sweep_start = time.perf_counter()
+        sweep_df = run_sweep(embeddings, documents, grid, coherence_texts)
+        sweep_wall = time.perf_counter() - t_sweep_start
+
+        for _, row in sweep_df.iterrows():
+            typer.echo(
+                f"  config={row['config']}; n_leaf={row['n_leaf_topics']}; "
+                f"noise={row['noise_fraction']:.3f}; npmi={row['npmi_top10']:.3f}; "
+                f"t={row['wall_seconds']:.1f}s"
+                + (f"; error={row['error']}" if row.get("error") else "")
+            )
+
+        sweep_out = Path(str(cfg.output.sweep_parquet))
+        sweep_out.parent.mkdir(parents=True, exist_ok=True)
+        sweep_df.to_parquet(sweep_out, index=False)
+        record_run(
+            artifact_path=sweep_out,
+            inputs={
+                "papers_duckdb": duckdb_path,
+                "embeddings_parquet": embeddings_parquet,
+                "topics_config_yaml": topics_yaml_path,
+            },
+            config={
+                "selector": selector,
+                "constraints": constraints,
+                "n_configs": len(grid),
+                "grid": [_asdict(c) for c in grid],
+            },
+        )
+
+        valid = sweep_df[sweep_df["error"].isna()].copy()
+        eligible = valid[
+            (valid["n_leaf_topics"] >= n_leaf_min)
+            & (valid["n_leaf_topics"] <= n_leaf_max)
+            & (valid["noise_fraction"] <= noise_max)
+        ]
+        if len(eligible) == 0:
+            constraints_unmet = True
+            typer.echo(
+                "WARNING: no sweep config satisfies constraints "
+                f"(n_leaf_topics in [{n_leaf_min},{n_leaf_max}], noise<={noise_max:.2f}). "
+                "Falling back to global selector argmax."
+            )
+            if len(valid) == 0:
+                typer.echo("ERROR: every sweep config errored out; cannot pick a winner.")
+                raise typer.Exit(code=1)
+            for _, row in valid.nlargest(3, selector).iterrows():
+                typer.echo(
+                    f"  closest: n_leaf={row['n_leaf_topics']}  "
+                    f"noise={row['noise_fraction']:.3f}  {selector}={row[selector]:.3f}"
+                )
+            best_idx = int(valid[selector].idxmax())
+        else:
+            best_idx = int(eligible[selector].idxmax())
+        chosen_row_index = best_idx
+        chosen_dict = dict(sweep_df.loc[best_idx, "config"])
+        typer.echo(
+            f"chosen row {best_idx}: {chosen_dict}  "
+            f"({selector}={sweep_df.loc[best_idx, selector]:.3f}, "
+            f"n_leaf={sweep_df.loc[best_idx, 'n_leaf_topics']}, "
+            f"noise={sweep_df.loc[best_idx, 'noise_fraction']:.3f}, "
+            f"constraints_met={not constraints_unmet})"
+        )
+        chosen_cfg = TopicConfig(**chosen_dict)
+    else:
+        typer.echo("sweep skipped; using defaults_config")
+        chosen_cfg = TopicConfig(**defaults_dict)
+
+    typer.echo(f"fitting final model on {len(documents)} documents")
+    t_fit_start = time.perf_counter()
+    model = fit_topics(embeddings, documents, chosen_cfg)
+    fit_wall = time.perf_counter() - t_fit_start
+
+    t_hier_start = time.perf_counter()
+    hier_df = build_hierarchy(
+        model,
+        documents,
+        target_mid_levels=int(cfg.hierarchy.target_mid_levels),
+        target_top_levels=int(cfg.hierarchy.target_top_levels),
+    )
+    hier_wall = time.perf_counter() - t_hier_start
+
+    hier_out = Path(str(cfg.output.hierarchy_parquet))
+    hier_out.parent.mkdir(parents=True, exist_ok=True)
+    hier_df.to_parquet(hier_out, index=False)
+
+    topics_arr = np.asarray(model.topics_)
+    if topics_arr.shape[0] != pmids.shape[0]:
+        typer.echo(f"ERROR: model.topics_ length {topics_arr.shape[0]} != n_pmids {pmids.shape[0]}")
+        raise typer.Exit(code=1)
+    assignments = pd.DataFrame(
+        {
+            "pmid": pmids.astype(np.int64),
+            "topic_id": topics_arr.astype(np.int64),
+            "is_noise": topics_arr == -1,
+        }
+    )
+    topics_out = Path(str(cfg.output.topics_parquet))
+    topics_out.parent.mkdir(parents=True, exist_ok=True)
+    assignments.to_parquet(topics_out, index=False)
+
+    model_dir = Path(str(cfg.output.model_dir))
+    model_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        model.save(str(model_dir), serialization="safetensors", save_ctfidf=True)
+        typer.echo(f"saved model with save_ctfidf=True to {model_dir}")
+    except TypeError:
+        model.save(str(model_dir), serialization="safetensors")
+        typer.echo(f"saved model without save_ctfidf kwarg to {model_dir}")
+
+    n_unique_leaf = int(len({int(t) for t in topics_arr.tolist() if int(t) != -1}))
+    noise_fraction = float((topics_arr == -1).sum() / max(1, topics_arr.shape[0]))
+    n_mid = int(hier_df["mid_level_id"].nunique()) if len(hier_df) else 0
+    n_top = int(hier_df["top_level_id"].nunique()) if len(hier_df) else 0
+
+    from scifield.thematic.coherence import compute_coherence
+    from scifield.thematic.topics import _topic_words as _tw
+
+    unique_leaf_ids = sorted({int(t) for t in topics_arr.tolist() if int(t) != -1})
+    chosen_word_lists = [_tw(model, t, top_n=10) for t in unique_leaf_ids]
+    coh = compute_coherence(chosen_word_lists, coherence_texts, top_n=10)
+
+    def _ver(pkg: str, mod_attr: Any = None) -> str:
+        if mod_attr is not None:
+            try:
+                return str(mod_attr.__version__)
+            except AttributeError:
+                pass
+        try:
+            return _im.version(pkg)
+        except Exception:
+            return "unknown"
+
+    import bertopic as _bertopic
+    import gensim as _gensim
+    import sklearn as _sklearn
+    import umap as _umap
+
+    software_versions = {
+        "bertopic": _ver("bertopic", _bertopic),
+        "umap_learn": _ver("umap-learn", _umap),
+        "hdbscan": _ver("hdbscan"),
+        "gensim": _ver("gensim", _gensim),
+        "numpy": _ver("numpy", np),
+        "sklearn": _ver("scikit-learn", _sklearn),
+    }
+
+    total_wall = time.perf_counter() - t_total_start
+
+    sidecar_config: dict[str, Any] = {
+        "chosen_config": _asdict(chosen_cfg),
+        "chosen_row_index": chosen_row_index,
+        "constraints": constraints,
+        "selector": selector,
+        "constraints_unmet": constraints_unmet,
+        "hierarchy": {
+            "target_mid_levels": int(cfg.hierarchy.target_mid_levels),
+            "target_top_levels": int(cfg.hierarchy.target_top_levels),
+        },
+        "n_pmids_deduped": int(pmids.shape[0]),
+        "n_leaf_topics": n_unique_leaf,
+        "n_mid_levels": n_mid,
+        "n_top_levels": n_top,
+        "noise_fraction": noise_fraction,
+        "coherence": {
+            "c_npmi": float(coh.get("c_npmi", float("nan"))),
+            "c_v": float(coh.get("c_v", float("nan"))),
+        },
+        "wall_seconds": {
+            "sweep": round(sweep_wall, 3),
+            "final_fit": round(fit_wall, 3),
+            "hierarchy": round(hier_wall, 3),
+            "total": round(total_wall, 3),
+        },
+        "thread_count": int(os.cpu_count() or 1),
+        "software_versions": software_versions,
+        "deviations": ({"constraints_unmet": True} if constraints_unmet else {}),
+        "integrity_check": integrity,
+        "skip_sweep": bool(skip_sweep),
+        "limit": int(limit) if limit is not None else None,
+    }
+
+    sidecar_inputs = {
+        "papers_duckdb": duckdb_path,
+        "embeddings_parquet": embeddings_parquet,
+        "topics_config_yaml": topics_yaml_path,
+    }
+    record_run(artifact_path=topics_out, inputs=sidecar_inputs, config=sidecar_config)
+    record_run(artifact_path=hier_out, inputs=sidecar_inputs, config=sidecar_config)
+    record_run(artifact_path=model_dir, inputs=sidecar_inputs, config=sidecar_config)
+
+    typer.echo(
+        f"done: n_leaf={n_unique_leaf}  n_mid={n_mid}  n_top={n_top}  "
+        f"noise={noise_fraction:.3f}  npmi={sidecar_config['coherence']['c_npmi']:.3f}  "
+        f"cv={sidecar_config['coherence']['c_v']:.3f}  total={total_wall:.1f}s"
+    )
+
+
+@epistemic_app.command("sample")
+def epistemic_sample(
+    config: str = typer.Option("v1", "--config", "-c"),
+    n_sample: int | None = typer.Option(None, "--n-sample"),
+    seed: int | None = typer.Option(None, "--seed"),
+) -> None:
+    """Draw the stratified hand-labeling sample (V1-S07)."""
+    import duckdb
+    import pandas as pd
+
+    from scifield.epistemic.sampling import SamplingConfig, stratified_sample
+
+    cfg = _load_epistemic_config(config)
+
+    duckdb_path = Path(str(cfg.input.duckdb_path))
+    topics_parquet = Path(str(cfg.input.topics_parquet))
+    sample_path = Path(str(cfg.output.sample_path))
+
+    if not duckdb_path.exists():
+        typer.echo(f"papers DuckDB not found at {duckdb_path}; run `scifield harvest` first.")
+        raise typer.Exit(code=1)
+    if not topics_parquet.exists():
+        typer.echo(f"topics parquet not found at {topics_parquet}; run `scifield topics` first.")
+        raise typer.Exit(code=1)
+
+    sampling_cfg = SamplingConfig(
+        duckdb_path=duckdb_path,
+        topics_parquet=topics_parquet,
+        n_sample=int(n_sample) if n_sample is not None else int(cfg.sampling.n_sample),
+        seed=int(seed) if seed is not None else int(cfg.sampling.seed),
+        eras=tuple(str(e) for e in cfg.sampling.eras),
+        topic_coverage_min=int(cfg.sampling.topic_coverage_min),
+    )
+
+    # stratified_sample internally calls ensure_papers_distinct_view, which
+    # issues CREATE OR REPLACE VIEW — open RW.
+    con = duckdb.connect(str(duckdb_path))
+    try:
+        df: pd.DataFrame = stratified_sample(con, sampling_cfg)
+    finally:
+        con.close()
+
+    sample_path.parent.mkdir(parents=True, exist_ok=True)
+    table = pa.Table.from_pandas(df, preserve_index=False)
+    pq.write_table(table, sample_path)
+
+    n_cells = int(df[["journal", "era"]].drop_duplicates().shape[0])
+    n_topics = int(df["topic_id"].dropna().nunique())
+
+    record_run(
+        artifact_path=sample_path,
+        inputs={
+            "papers_duckdb": duckdb_path,
+            "topics_parquet": topics_parquet,
+        },
+        config={
+            "n_sample": int(sampling_cfg.n_sample),
+            "seed": int(sampling_cfg.seed),
+            "eras": list(sampling_cfg.eras),
+            "topic_coverage_min": int(sampling_cfg.topic_coverage_min),
+            "n_cells": n_cells,
+            "n_topics": n_topics,
+        },
+    )
+
+    typer.echo(f"sampled n={len(df)} cells={n_cells} topic_coverage={n_topics} out={sample_path}")
+
+
+@epistemic_app.command("export-labels")
+def epistemic_export_labels(
+    config: str = typer.Option("v1", "--config", "-c"),
+    rater: str = typer.Option(
+        ...,
+        "--rater",
+        help="Rater name (used in the xlsx filename and instructions sheet).",
+    ),
+    sample: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--sample",
+        help="Override path to the sample parquet.",
+    ),
+    out: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--out",
+        help="Override output xlsx path.",
+    ),
+) -> None:
+    """Export a per-rater Excel labeling workbook from the sample parquet (V1-S07)."""
+    from scifield.epistemic.labeling import export_to_xlsx
+
+    cfg = _load_epistemic_config(config)
+
+    sample_path = Path(sample) if sample is not None else Path(str(cfg.output.sample_path))
+    out_path = (
+        Path(out)
+        if out is not None
+        else Path(str(cfg.output.labels_xlsx_dir)) / f"labels_{rater}.xlsx"
+    )
+
+    if not sample_path.exists():
+        typer.echo(
+            f"sample parquet not found at {sample_path}; run `scifield epistemic sample` first."
+        )
+        raise typer.Exit(code=1)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    export_to_xlsx(sample_path, out_path, rater)
+    typer.echo(f"wrote {out_path}")
+
+
+@epistemic_app.command("import-labels")
+def epistemic_import_labels(
+    config: str = typer.Option("v1", "--config", "-c"),
+    rater: str = typer.Option(..., "--rater"),
+    file: Path = typer.Option(..., "--file"),  # noqa: B008
+) -> None:
+    """Import a filled-in xlsx into the long-form handlabel parquet (V1-S07)."""
+    from scifield.epistemic.labeling import import_from_xlsx
+
+    cfg = _load_epistemic_config(config)
+    parquet_out = Path(str(cfg.output.handlabel_parquet))
+
+    if not file.exists():
+        typer.echo(f"labels xlsx not found at {file}")
+        raise typer.Exit(code=1)
+
+    summary = import_from_xlsx(file, rater, parquet_out)
+
+    for e in summary["errors"]:
+        typer.echo(f"  row={e['row']} pmid={e['pmid']} error={e['error']}")
+
+    typer.echo(
+        f"n_rows={summary['n_rows']} n_imported={summary['n_imported']} "
+        f"n_errors={summary['n_errors']} out={summary['out_path']}"
+    )
+
+    if summary["n_errors"] > 0:
+        raise typer.Exit(code=1)
+
+
+@epistemic_app.command("pilot")
+def epistemic_pilot(
+    config: str = typer.Option("v1", "--config", "-c"),
+    n: int | None = typer.Option(None, "--n"),
+) -> None:
+    """Run the 50-abstract Claude-Code pilot extractor (V1-S07)."""
+    # Lazy imports: pilot.py is shipped by sibling Batch 4A; deferring the
+    # import until the command body runs avoids any import-time race during
+    # parallel batch development.
+    from scifield.epistemic.extract import ExtractConfig
+    from scifield.epistemic.pilot import PilotConfig, run_pilot
+
+    cfg = _load_epistemic_config(config)
+
+    extract_cfg = ExtractConfig(
+        claude_cmd=tuple(str(c) for c in cfg.pilot.claude_cmd),
+        model_id=str(cfg.model.id),
+        prompt_version=str(cfg.prompt.version),
+    )
+    pilot_cfg = PilotConfig(
+        sample_path=Path(str(cfg.output.sample_path)),
+        pilot_path=Path(str(cfg.output.pilot_path)),
+        pilot_failed_path=Path(str(cfg.output.pilot_failed_path)),
+        n_pilot=int(n) if n is not None else int(cfg.pilot.n_pilot),
+        extract_cfg=extract_cfg,
+    )
+
+    def progress(i: int, total: int, outcome: str) -> None:
+        typer.echo(f"  [{i}/{total}] {outcome}")
+
+    summary = run_pilot(pilot_cfg, progress=progress)
+
+    typer.echo(
+        f"pilot done: n_ok={summary.get('n_ok', 0)} "
+        f"n_failed={summary.get('n_failed', 0)} "
+        f"out={summary.get('pilot_path', pilot_cfg.pilot_path)} "
+        f"failed_out={summary.get('pilot_failed_path', pilot_cfg.pilot_failed_path)}"
     )
 
 

@@ -1,0 +1,37 @@
+# V1-S07 — Epistemic extraction config.
+# Drives stratified sampling, Excel labeling round-trip, and the
+# 50-abstract Claude-Code pilot. Downstream batches add fields under
+# `pilot`, `model`, and `prompt` as needed; keep this file additive.
+
+input:
+  duckdb_path: data/v1/papers.duckdb
+  topics_parquet: data/v1/topics.parquet
+
+output:
+  sample_path: data/v1/handlabel_sample.parquet
+  handlabel_parquet: data/v1/epistemic_handlabel.parquet
+  pilot_path: data/v1/epistemic_pilot.parquet
+  pilot_failed_path: data/v1/epistemic_pilot_failed.parquet
+  labels_xlsx_dir: data/v1
+
+sampling:
+  n_sample: 500
+  seed: 20260522
+  # Exact strings: must match the CASE expression used elsewhere in the
+  # pipeline that buckets year -> era. Do not reformat.
+  eras: ["pre2000", "2000-2009", "2010-2019", "2020+"]
+  topic_coverage_min: 80
+
+pilot:
+  n_pilot: 50
+  # Subprocess invocation; pilot.run_pilot() will append the prompt via
+  # stdin and capture stdout.
+  claude_cmd: ["claude", "--print"]
+
+model:
+  # Opaque identifier stamped onto every EpistemicExtraction; the real
+  # underlying model is whatever Claude Code resolves at call time.
+  id: "claude-via-claude-code"
+
+prompt:
+  version: "v0.1"
