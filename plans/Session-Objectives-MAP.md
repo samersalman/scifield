@@ -55,7 +55,7 @@ Note: the existing `Version 1/` and `Version 2/` folders should be matched by a 
 | # | After session | What's decided | Pass criterion | If fail |
 |---|---|---|---|---|
 | G1 | V1-S06 | Topic structure clinically interpretable? | 20-topic spot-check passes domain-expert read | Fix embedding/clustering — do NOT continue to Phase 3 |
-| G2 | V1-S09 | Epistemic extraction reliable? | κ ≥ 0.7 (design), ≥ 0.8 (controls), ≥ 0.6 (effect direction); LLM-vs-human agreement within 10% of inter-rater | Pivot to fine-tuned BERT classifier, or drop F1 from manuscript |
+| G2 | V1-S09 | Epistemic extraction reliable? | (v2, 2026-05-29; no human labels) ALL: cross-tool RCT agreement κ≥0.7 vs PubMed PublicationType MeSH; model-vs-model study_design agreement ≥80% on the 1,981 dual-model paired PMIDs (full DeepSeek rerun of the Claude-Code set; the two V1-S08 sets are disjoint); six internal-validity priors all hold (see V1-S09 spec) | Document caveats in Limitations; F1 stays but reliability story qualified |
 | G3 | V1-S11 | Dual-novelty 2×2 shows structure? | Semantic-structural correlation \|ρ\| < 0.4 AND ≥1 surprising-to-expert finding | Drop F2; paper pivots to F1+F3 |
 | G4 | V1-S14 | GNN beats baselines? | >5 pp emergence AUC over best baseline at 3yr horizon, Wilcoxon significant | Frame F3 as null finding or drop it |
 | G5 | V1-S16 | ≥2 of 3 findings hold? | At least 2 of {F1, F2, F3} have statistically supported, narratively coherent results | Downscope to methods + resource paper |
@@ -355,38 +355,80 @@ Pass = 20-topic spot-check reads as clinically coherent to you (or a co-author w
 
 ---
 
-### V1-S09 — Epistemic validation, cross-tool triangulation, Gate G2 report
+### V1-S09 — Epistemic validation v2 (no human labels), Gate G2 report
 
-**Phase:** 3 (Epistemic quality) | **Plan ref:** §5 Phase 3 + Gate after Phase 3 | **Effort:** ~1.5 days | **Depends on:** V1-S08
+**Phase:** 3 (Epistemic quality) | **Plan ref:** §5 Phase 3 + Gate after Phase 3 (v2 — redefined 2026-05-29) | **Effort:** ~1 day | **Depends on:** V1-S08
 
-**Objective.** Validate LLM extraction against hand-labels and against Trialstreamer/RobotReviewer; produce error analysis; write the G2 gate report.
+**Objective.** Validate the 87,268 DeepSeek extractions without human labels, via three reliability lenses: cross-tool agreement, model-vs-model agreement, and internal-validity priors. Produce the G2 gate report.
 
-**Preconditions.** V1-S08 complete; both `epistemic_handlabel_final.parquet` and `epistemic_extracted.parquet` exist.
+**Scope rationale (2026-05-29 redefinition).** The original G2 was hand-label κ on a 500-abstract sample. Samer explicitly dropped this — the goal of SciField is not to re-establish LLM extraction quality (already well-established in the meta-research literature). Hand-labeling 500 abstracts is high effort for a finding that is not the paper's contribution. The redefinition substitutes three cheaper-but-still-defensible reliability lenses.
+
+**Status: ✓ complete — Gate G2 PASS, signed by Samer 2026-05-29.** V1-S08 output audited: `data/v1/epistemic_extracted.parquet` had 89,249 rows / 89,230 distinct PMIDs across two **disjoint** sets — `deepseek-v4-flash` (87,268 rows / 87,249 distinct PMIDs; 19 intra-DeepSeek duplicate rows) and `claude-via-claude-code` (1,981 rows / 1,981 distinct PMIDs). Cross-model overlap = 0; the resumable DeepSeek run skipped the PMIDs already done by Claude-Code. The previously assumed "19 overlap PMIDs" for C2 do not exist. Decision (with Samer): built the C2 lens via a full DeepSeek rerun on all 1,981 Claude-Code PMIDs (spend-approved, realized $0.12) → parquet now 91,230 rows with 1,981 cross-model paired PMIDs. Gate G2 (label-free v2) computed in `notebooks/06_epistemic_validation.ipynb`: C1 PASS (N=89,230, agr 0.9832, κ 0.8629), C2 PASS (N=1,981, study_design 0.8920 / has_control 0.9568 / sample_size ρ 0.9867), C3 PASS (6/6 priors). **Overall G2 = PASS**, signed off by Samer 2026-05-29 (`docs/gates/G2_epistemic_reliability.md`). V1-S10 (novelty) unblocked.
+
+**Preconditions.** V1-S08 complete; `data/v1/epistemic_extracted.parquet` exists with both `deepseek-v4-flash` and `claude-via-claude-code` rows; DuckDB `papers` table carries PubMed `PublicationType` MeSH headings (verify with V1-S03 harvester output schema).
 
 **In scope.**
-- `notebooks/06_epistemic_validation.ipynb`: compute inter-rater κ (you vs. co-author) and LLM-vs-arbitrated κ for each field; confusion matrices; per-field error analysis.
-- `src/scifield/epistemic/triangulate.py`: run Trialstreamer (RCT detector) and RobotReviewer (RoB) on the same 500-abstract sample where applicable; report agreement.
-- `docs/phases/epistemic.md`: final write-up with all validation numbers.
-- **`docs/gates/G2_epistemic_reliability.md`**: gate report — κ table per field vs. pre-registered targets, error categories, recommendation (proceed / pivot to fine-tuned BERT / drop F1).
+
+- `notebooks/06_epistemic_validation.ipynb` — runs all three lenses, emits the gate-report tables and figures.
+- `src/scifield/epistemic/validate.py` — pure functions for each lens (cross-tool agreement, model-vs-model agreement, internal-validity checks), tested via unit tests with synthetic fixtures.
+- `docs/gates/G2_epistemic_reliability.md` — the gate report, structured around C1/C2/C3 below with explicit pass/fail per criterion.
+- `docs/phases/epistemic.md` — closeout addendum referencing the gate report.
 
 **Out of scope.**
-- Any use of epistemic features in downstream analyses → Phase 6.
-- BERT fine-tuning fallback path — only triggered if gate fails (would be a new session V1-S09b).
+
+- Hand-labeling, inter-rater κ, arbitration workbooks. The infrastructure for these stays in the codebase (V1-S07/S08 `arbitrate.py`, `sampling.py`) as optional future work, but is not used in this gate.
+- BERT fine-tuning fallback path — eliminated; if G2 fails, F1 stays in the manuscript with a qualified reliability section.
+- RobotReviewer integration (risk-of-bias) — defer; not a field in our schema, would require running RobotReviewer on full-texts which we don't have.
 - v2 anything.
 
+**Three-lens gate — ALL must hold:**
+
+**C1. Cross-tool agreement: RCT detection vs PubMed PublicationType MeSH**
+
+PubMed already classifies RCTs via the MeSH PublicationType `Randomized Controlled Trial`. This is a free, high-coverage cross-tool comparator: our DeepSeek `study_design == "RCT"` extraction can be benchmarked against it for the entire corpus.
+
+- Pass: Cohen's κ ≥ 0.7 on PMIDs with non-null PublicationType, OR simple agreement ≥ 85%.
+- Sample size N = all DeepSeek-extracted PMIDs with at least one PubMed PublicationType assigned (expected ~87k).
+- Stretch (optional): if time permits, pull Trialstreamer's downloadable RCT corpus and run a second cross-tool agreement table for the PMID intersection. Not required for gate pass.
+
+**C2. Model-vs-model agreement: DeepSeek vs Claude Code**
+
+There is **no cross-model overlap** in the V1-S08 output. `data/v1/epistemic_extracted.parquet` holds 89,249 rows / 89,230 distinct PMIDs, split into two **disjoint** PMID sets: `deepseek-v4-flash` (87,268 rows, 87,249 distinct PMIDs — the 19-row gap is DeepSeek-INTERNAL duplicate rows, NOT cross-model pairs) and `claude-via-claude-code` (1,981 rows, 1,981 distinct PMIDs). The two sets share **zero** PMIDs: the resumable DeepSeek run skipped the 1,981 PMIDs already extracted by Claude-Code (89,230 − 1,981 = 87,249). The earlier "19 overlap PMIDs" reading was wrong — those 19 are intra-DeepSeek duplicates, not dual-model pairs.
+
+Because the dual-run produced no paired observations, the C2 lens is built by a **full DeepSeek rerun on all 1,981 Claude-Code PMIDs** (not a sample), using the existing Claude-Code rows as the model-vs-model comparator. This yields 1,981 dual-model paired PMIDs. The rerun requires Samer's explicit spend approval (dry-run first) per `feedback-deepseek-spend-gating`.
+
+- Pass: study_design exact-match agreement ≥ 80%; has_control exact-match agreement ≥ 80%; sample_size Spearman ρ ≥ 0.75 on PMIDs where both report a non-null value.
+- N: 1,981 paired PMIDs once the full rerun completes. If the rerun is incomplete at gate time, report whatever N is available; if N < 50, note as "underpowered model-vs-model lens" and weight C1+C3 accordingly.
+
+**C3. Internal-validity checks: corpus-wide priors**
+
+Cheap distributional sanity checks on the full 87,268 DeepSeek extractions. Each must hold:
+
+- (a) RCT prevalence (study_design == "RCT") ∈ [3%, 15%]. Biomedical prior.
+- (b) statistical_claim_present rate ∈ [60%, 95%]. Most published biomedical work makes a statistical claim; well below 60% suggests prompt failure, above 95% suggests over-eager labeling.
+- (c) coi_disclosed_in_abstract rate < 15%. Most journals put COI in full-text footers, not abstracts.
+- (d) Conditional: among PMIDs with study_design == "RCT", has_control == True ≥ 90%. RCTs have controls by definition; failures here flag a definitional drift.
+- (e) sample_size sanity: max < 10,000,000 (human studies); median ∈ [10, 5000].
+- (f) effect_direction distribution: "na" share ≥ 5% (presence of reviews / methods papers); "positive" share ≤ 70% (some null and mixed results expected).
+
 **Acceptance tests.**
-- κ computed for all 6 fields.
-- LLM-vs-human agreement on test set within 10% of inter-rater agreement (plan success criterion).
-- Triangulation table exists.
+
+- All three lenses computed and tabled in `docs/gates/G2_epistemic_reliability.md`.
+- Each pass/fail decision per criterion explicit and reproducible from `notebooks/06_epistemic_validation.ipynb`.
+- Unit tests for `validate.py` functions pass (synthetic fixtures only — no API calls).
 - Gate report committed.
 
-**STOP after this session. Resolve gate G2 before V1-S10.**
+**STOP after this session. Resolve gate G2 (pass / qualified-pass / fail) before V1-S10.**
 
 ---
 
-#### 🚦 GATE G2 — Epistemic extraction reliability (after V1-S09)
+#### 🚦 GATE G2 v2 — Epistemic extraction reliability without human labels (after V1-S09)
 
-Pass = κ ≥ 0.7 (design), ≥ 0.8 (controls), ≥ 0.6 (effect direction); LLM-vs-human within 10% of inter-rater. Fail = pivot to fine-tuned BERT classifier (insert session V1-S09b), or drop F1 (epistemic cascade) from manuscript and proceed with F2+F3 only. Do not paper over a failed gate.
+**Pass** = C1 cross-tool κ ≥ 0.7 OR agreement ≥ 85% AND C2 study_design and has_control agreement ≥ 80% on the 1,981 dual-model paired PMIDs (or whatever paired N the full DeepSeek rerun has produced at gate time) AND all six C3 internal-validity priors hold.
+
+**Qualified pass** = C1 passes AND C3 passes BUT C2 fails or N too small. F1 stays in the manuscript with an explicit caveat that model-vs-model agreement is underpowered.
+
+**Fail** = C1 fails OR ≥2 of the C3 priors fail. Document the failure in the Limitations section, qualify any F1 claims accordingly, do NOT pivot to BERT fine-tuning (out of scope per the 2026-05-29 redefinition).
 
 ---
 

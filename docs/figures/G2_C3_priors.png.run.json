@@ -1,0 +1,21 @@
+{
+  "config": {
+    "gate": "G2",
+    "lens": "G2_C3_priors",
+    "source_config_hash": "bfd393f24169b199015a74ccdd72bac92b737e8d7de78337f512ede2f7fa3f52",
+    "source_git_sha": "e7ea1aeea58ee2887a2c38a281ce32f810dbc5ca"
+  },
+  "config_hash": "3f7760e6abc3a4e44e743c79c90954273337e08006391184e5bdaf74bc47c7a9",
+  "git_dirty": true,
+  "git_sha": "e7ea1aeea58ee2887a2c38a281ce32f810dbc5ca",
+  "input_hashes": {
+    "extracted": "254be8766e55b24a172448483fcd960d3391ed4dbff9a9876bb9585dcfc5271c",
+    "papers_duckdb": "de0cc5711f350ab7739a956451761d8da0cf49ba81b5ef6e477d452213f6b296"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-05-29T21:01:34.057087+00:00"
+}

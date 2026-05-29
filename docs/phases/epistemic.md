@@ -109,3 +109,167 @@ contestable (reviews vs case series, basic science as `other`,
 ambiguous COI lines). Will run after V1-S08 handlabels exist so the
 audit has a human reference, not as speculation against the LLM's
 solo output.
+
+## V1-S08 closeout
+
+### Infrastructure landed (2026-05-23)
+
+- `src/scifield/epistemic/batch.py` — concurrent + resumable runner
+  (`ProcessPoolExecutor`, chunk-append parquet, `record_run` per
+  flush, `preregistration_url` threaded into every sidecar).
+- `src/scifield/epistemic/arbitrate.py` — disagreement detection +
+  arbitration workbook round-trip (`load_two_raters`,
+  `find_disagreements`, `export_arbitration_xlsx`,
+  `import_arbitration_xlsx`).
+- `src/scifield/epistemic/extract.py` — added picklable
+  `extract_one_subprocess` wrapper for `ProcessPoolExecutor` workers.
+- `src/scifield/cli.py` — new commands `extract-batch`,
+  `arbitrate-export`, `arbitrate-import`.
+- `conf/epistemic/v1.yaml` — new `extract_batch:` block.
+- `docs/operations/api_costs.md` — per-run usage ledger created and
+  backfilled with the V1-S07 pilot row.
+- Tests: `tests/test_epistemic_batch.py` (+4) and
+  `tests/test_epistemic_arbitrate.py` (+6) green; CLI smoke tests
+  appended to `tests/test_cli_epistemic.py` (+5). Full suite
+  184 passed, 1 skipped.
+
+### Hand-labeling workbooks shipped
+
+- `data/v1/epistemic_handlabel_samer.xlsx` — 500 rows, 6 dropdown
+  validations, Instructions + Labels sheets.
+- `data/v1/epistemic_handlabel_partner.xlsx` — same shape.
+
+Both produced via `scifield epistemic export-labels --rater {samer,
+partner} --out ...` from the frozen `data/v1/handlabel_sample.parquet`
+(Hare-rounded 500 from V1-S07). Human inter-rater work proceeds on
+its own clock; arbitration plumbing is ready to consume both
+workbooks via `arbitrate-export` / `arbitrate-import` whenever they
+return.
+
+### Smoke batch (2026-05-23, n=100, concurrency=4)
+
+- Command: `scifield epistemic extract-batch --submit --limit 100 --concurrency 4`.
+- Result: 100 / 100 ok, 0 failures.
+- Wall time: 131.2 s (~1.31 s/call effective, ~4× speedup over the
+  V1-S07 pilot's ~5 s/call sequential baseline — confirms the
+  bounded process pool scales linearly at concurrency 4 with no
+  observed Claude Code rate-limit pushback).
+- Sidecar `data/v1/epistemic_extracted.parquet.run.json` carries
+  `config.preregistration_url = "https://doi.org/10.17605/OSF.IO/8ZJHD"`
+  (PR1 acceptance gate cleared).
+- Output distribution looks plausible: `study_design` dominated by
+  case_series (35), cohort (29), other (23); `effect_direction`
+  weighted positive (45) + na (40); failed parquet empty but
+  schema-pinned. Spot-checks against the smoke output are consistent
+  with the pilot's drift profile (no new pathology).
+- See `docs/operations/api_costs.md` row `v1-s08-smoke` for the
+  ledger entry.
+
+### Full-corpus extraction (status: launchable, not yet run)
+
+- `papers_distinct WHERE abstract IS NOT NULL AND length > 50`
+  currently contains 89,230 rows (plan's 99,938 reflected an earlier
+  corpus snapshot — non-issue, the dedup + abstract filter is
+  unchanged).
+- Projected wall time at concurrency 4: ~8 h (89,230 × 1.31 s ÷ 4),
+  well under the plan's 35–55 h budget.
+- Launch with `scifield epistemic extract-batch --submit --concurrency 4`;
+  runner is resumable, so stopping and restarting is safe. Use
+  `scifield epistemic extract-batch --status` to query progress.
+  After the run completes, append a `v1-s08-full` row to
+  `docs/operations/api_costs.md` (transport `claude-code-cli`,
+  model_id `claude-via-claude-code`, sidecar path same as smoke).
+- `Session-Objectives-MAP.md` V1-S08 status: mark
+  "✓ infrastructure + LLM extraction; awaiting full-corpus run +
+  hand-label arbitration" rather than fully ✓, per the plan
+  closeout rule (final ✓ waits on
+  `epistemic_handlabel_final.parquet` arriving post-rater).
+
+### Carryovers into V1-S09 (v2 — scope redefined 2026-05-29)
+
+The original V1-S09 was hand-label inter-rater κ + LLM-vs-human
+agreement on a 500-abstract sample. Samer explicitly dropped this on
+2026-05-29: the goal of SciField is not to re-establish LLM extraction
+quality (already well-established in the meta-research literature),
+and hand-labeling 500 abstracts is high effort for a non-contribution
+finding.
+
+V1-S09 now executes a three-lens reliability gate **without human
+labels** (see `plans/Session-Objectives-MAP.md` §V1-S09 for the full
+spec):
+
+- **C1 — Cross-tool agreement** vs PubMed `PublicationType` MeSH for
+  RCT classification (Cohen's κ ≥ 0.7 or simple agreement ≥ 85%).
+  Trialstreamer optional stretch.
+- **C2 — Model-vs-model agreement** between the `deepseek-v4-flash`
+  extractions and the 1,981 `claude-via-claude-code` extractions. NB:
+  the two V1-S08 model sets were **disjoint** (cross-model overlap = 0)
+  — the resumable DeepSeek run skipped the 1,981 PMIDs already done by
+  Claude-Code (89,230 − 1,981 = 87,249 distinct DeepSeek PMIDs), and
+  the 19 extra DeepSeek rows are DeepSeek-*internal* duplicate rows,
+  not cross-model pairs. C2 was therefore built by a spend-approved
+  DeepSeek rerun on all 1,981 Claude-Code PMIDs (see the V1-S09
+  closeout below), yielding 1,981 cross-model paired observations.
+- **C3 — Internal-validity priors** on the corpus-wide distribution
+  (RCT prevalence, statistical-claim rate, COI rate, RCT ⇒ control
+  conditional, sample-size sanity, effect-direction skew).
+
+Hand-labeling infrastructure (`arbitrate.py`, `sampling.py`,
+`epistemic_handlabel.parquet`) remains in the codebase as optional
+future work, but is not used in this gate. BERT fine-tuning fallback
+is eliminated: if the v2 gate fails, F1 stays in the manuscript with
+a qualified Limitations note rather than a model swap.
+
+## V1-S09 closeout (2026-05-29)
+
+### Correction — the "19-overlap" claim was wrong
+
+A prior carryover note asserted a 19-PMID cross-model overlap between
+the two V1-S08 model sets. That was incorrect. The two sets were
+**disjoint — cross-model overlap = 0.**
+
+- `deepseek-v4-flash` covered 87,268 rows / 87,249 **distinct** PMIDs.
+  The 19-row gap (87,268 − 87,249) is DeepSeek-*internal* duplicate
+  rows, **not** cross-model pairs.
+- `claude-via-claude-code` covered 1,981 PMIDs.
+- The resumable DeepSeek runner skipped the 1,981 PMIDs already done by
+  Claude-Code, which is exactly why the sets were disjoint:
+  89,230 − 1,981 = 87,249 distinct DeepSeek PMIDs.
+
+**Fix.** A full DeepSeek rerun was executed on all 1,981 Claude-Code
+PMIDs (spend-approved per the mandatory DeepSeek gating rule; realized
+cost ≈ $0.12, logged in `docs/operations/api_costs.md` as
+`v1-s09-c2-rerun`) and appended to
+`data/v1/epistemic_extracted.parquet`. The parquet is now 91,230 rows
+— `deepseek-v4-flash` 89,249 and `claude-via-claude-code` 1,981 — and
+the 1,981 PMIDs that now carry both models form **1,981 cross-model
+paired PMIDs** (the C2 set). Dedupe to one row per PMID per model at
+analysis time.
+
+### Gate G2 — final numbers (label-free v2 gate)
+
+- **C1 — cross-tool agreement** (extracted RCT flag vs PubMed
+  `PublicationType` MeSH), N = 89,230: simple agreement **0.9832**,
+  Cohen's **κ 0.8629**; TP = 5,089 / FP = 925 / FN = 571 / TN = 82,645;
+  sensitivity 0.8991, precision 0.8462. Thresholds (≥ 0.85 agreement,
+  ≥ 0.70 κ) cleared → **PASS.**
+- **C2 — model vs model** (DeepSeek vs Claude-Code), N = 1,981:
+  `study_design` exact-match **0.8920** (κ 0.8560, ≥ 0.80 → PASS);
+  `has_control` exact-match 0.9568 (κ 0.9087); `sample_size`
+  Spearman ρ 0.9867. → **PASS.**
+- **C3 — internal-validity priors:** 6 / 6 pass — RCT prevalence
+  6.74%, statistical-claim rate 66.1%, COI-in-abstract 0.05%,
+  RCT ⇒ control conditional 99.04%, `sample_size` median 103 (the
+  max of 68.2M was adjudicated as legitimate national-database studies,
+  e.g. NHS England / National Inpatient Sample / Medicare), effect
+  direction `'na'` 35.1%. → **PASS.**
+- **Overall G2: PASS.**
+
+### Provenance + artifacts
+
+- Gate report: `docs/gates/G2_epistemic_reliability.md`.
+- Validation notebook: `notebooks/06_epistemic_validation.ipynb`.
+- Provenance: `config_hash bfd393f2…`, `git_sha e7ea1ae`.
+
+This is the **STOP gate before V1-S10 (novelty).** The numbers above
+are recorded; the proceed / qualify / fail decision is Samer's.

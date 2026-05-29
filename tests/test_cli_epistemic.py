@@ -105,6 +105,8 @@ def _build_synth_cfg(tmp_path: Path) -> DictConfig:
     pilot_path = tmp_path / "epistemic_pilot.parquet"
     pilot_failed_path = tmp_path / "epistemic_pilot_failed.parquet"
     labels_xlsx_dir = tmp_path
+    extract_out = tmp_path / "epistemic_extracted.parquet"
+    extract_failed = tmp_path / "epistemic_failed.parquet"
     return OmegaConf.create(
         {
             "input": {
@@ -130,6 +132,13 @@ def _build_synth_cfg(tmp_path: Path) -> DictConfig:
             },
             "model": {"id": "claude-via-claude-code"},
             "prompt": {"version": "v0.1"},
+            "extract_batch": {
+                "out_path": str(extract_out),
+                "failed_path": str(extract_failed),
+                "concurrency": 1,
+                "chunk_size": 500,
+                "preregistration_url": "https://doi.org/10.17605/OSF.IO/8ZJHD",
+            },
         }
     )
 
@@ -419,3 +428,295 @@ def test_pilot_runs_with_mocked_extract(monkeypatch: pytest.MonkeyPatch, tmp_pat
     df = pd.read_parquet(pilot_path)
     assert len(df) == 3
     assert "pilot done" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# extract-batch
+# ---------------------------------------------------------------------------
+
+
+def _seed_extracted_parquet(path: Path, pmid: int) -> None:
+    """Plant a one-row success parquet matching PILOT_SUCCESS_SCHEMA."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from scifield.epistemic.pilot import PILOT_SUCCESS_SCHEMA
+
+    row = {
+        "pmid": pmid,
+        "study_design": "RCT",
+        "sample_size": 100,
+        "has_control": True,
+        "effect_direction": "positive",
+        "statistical_claim_present": True,
+        "coi_disclosed_in_abstract": False,
+        "model_id": "claude-via-claude-code",
+        "prompt_version": "v0.1",
+        "raw_response": '{"study_design":"RCT"}',
+        "extracted_at": "2026-01-01T00:00:00+00:00",
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    table = pa.Table.from_pylist([row], schema=PILOT_SUCCESS_SCHEMA)
+    pq.write_table(table, path)
+
+
+def test_cli_extract_batch_status_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`extract-batch --status` reports n_total / n_done / n_failed / n_remaining."""
+    cfg = _build_synth_cfg(tmp_path)
+    _make_synth_duckdb(Path(str(cfg.input.duckdb_path)))
+    # Plant one already-done row so the status counters split non-trivially.
+    out_path = Path(str(cfg.extract_batch.out_path))
+    _seed_extracted_parquet(out_path, pmid=1_000_000)
+
+    monkeypatch.setattr(cli_mod, "_load_epistemic_config", lambda name: cfg)
+
+    result = runner.invoke(app, ["epistemic", "extract-batch", "--status"])
+    assert result.exit_code == 0, result.stdout
+    assert "n_total=" in result.stdout
+    assert "n_done=" in result.stdout
+    assert "n_failed=" in result.stdout
+    assert "n_remaining=" in result.stdout
+    # We planted 5 rows total and pre-seeded 1, so the headline counts must
+    # appear with these exact integer values.
+    assert "n_total=5" in result.stdout, result.stdout
+    assert "n_done=1" in result.stdout, result.stdout
+
+
+def test_cli_extract_batch_submit_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`extract-batch --submit` runs end-to-end with subprocess + executor patched."""
+    import json as _json
+    from unittest.mock import MagicMock, patch
+
+    from scifield.epistemic.batch import concurrent as _bc
+
+    cfg = _build_synth_cfg(tmp_path)
+    _make_synth_duckdb(Path(str(cfg.input.duckdb_path)))
+
+    monkeypatch.setattr(cli_mod, "_load_epistemic_config", lambda name: cfg)
+
+    # Inline executor + subprocess router (mirrors tests/test_epistemic_batch.py).
+    class _InlineFuture:
+        def __init__(self, value: Any = None) -> None:
+            self._value = value
+
+        def result(self) -> Any:
+            return self._value
+
+    class _InlineExecutor:
+        def __init__(self, max_workers: int = 1, **_: Any) -> None:
+            self.max_workers = max_workers
+
+        def __enter__(self) -> _InlineExecutor:
+            return self
+
+        def __exit__(self, *exc_info: Any) -> None:
+            return None
+
+        def submit(self, fn: Any, *args: Any, **kwargs: Any) -> _InlineFuture:
+            return _InlineFuture(value=fn(*args, **kwargs))
+
+    def _inline_as_completed(future_to_pmid: dict[_InlineFuture, int]) -> list[_InlineFuture]:
+        return list(future_to_pmid.keys())
+
+    valid_payload = _json.dumps(
+        {
+            "study_design": "RCT",
+            "sample_size": 240,
+            "has_control": True,
+            "effect_direction": "positive",
+            "statistical_claim_present": True,
+            "coi_disclosed_in_abstract": False,
+        }
+    )
+
+    import subprocess as _subprocess
+
+    real_run = _subprocess.run
+
+    def _router(*args: Any, **kwargs: Any) -> Any:
+        argv = args[0] if args else kwargs.get("args")
+        if isinstance(argv, list | tuple) and len(argv) > 0 and argv[0] == "claude":
+            proc = MagicMock(spec=_subprocess.CompletedProcess)
+            proc.stdout = valid_payload
+            proc.stderr = ""
+            proc.returncode = 0
+            return proc
+        return real_run(*args, **kwargs)
+
+    with (
+        patch.object(_bc.futures, "ProcessPoolExecutor", new=_InlineExecutor),
+        patch.object(_bc.futures, "as_completed", new=_inline_as_completed),
+        patch("scifield.epistemic.extract.subprocess.run", side_effect=_router),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "epistemic",
+                "extract-batch",
+                "--submit",
+                "--concurrency",
+                "1",
+                "--limit",
+                "2",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stdout
+    assert "extract-batch done" in result.stdout
+    out_path = Path(str(cfg.extract_batch.out_path))
+    assert out_path.exists(), "extracted parquet was not created"
+    df = pd.read_parquet(out_path)
+    assert len(df) == 2
+
+
+def test_cli_extract_batch_requires_exactly_one_mode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Neither flag (or both) -> exit 2 with helpful message."""
+    cfg = _build_synth_cfg(tmp_path)
+    monkeypatch.setattr(cli_mod, "_load_epistemic_config", lambda name: cfg)
+
+    result_none = runner.invoke(app, ["epistemic", "extract-batch"])
+    assert result_none.exit_code == 2, result_none.stdout
+
+    result_both = runner.invoke(app, ["epistemic", "extract-batch", "--submit", "--status"])
+    assert result_both.exit_code == 2, result_both.stdout
+
+
+# ---------------------------------------------------------------------------
+# arbitrate-export / arbitrate-import
+# ---------------------------------------------------------------------------
+
+
+RATER_A_TAG = "samer"
+RATER_B_TAG = "partner"
+
+
+def _build_two_rater_handlabel_parquet(out_path: Path) -> None:
+    """Plant a synthetic long-form parquet with one agreement + one disagreement pmid."""
+    base_fields = {
+        "study_design": "RCT",
+        "sample_size": "240",
+        "has_control": "true",
+        "effect_direction": "positive",
+        "statistical_claim_present": "true",
+        "coi_disclosed_in_abstract": "false",
+    }
+
+    def _rows_for(pmid: int, rater: str, overrides: dict[str, str] | None = None) -> list[dict]:
+        merged = {**base_fields, **(overrides or {})}
+        return [
+            {
+                "pmid": pmid,
+                "rater": rater,
+                "field": field,
+                "value": value,
+                "imported_at": "2026-05-23T00:00:00+00:00",
+            }
+            for field, value in merged.items()
+        ]
+
+    rows: list[dict] = []
+    # pmid 2000 — full agreement.
+    rows.extend(_rows_for(2000, RATER_A_TAG))
+    rows.extend(_rows_for(2000, RATER_B_TAG))
+    # pmid 2001 — study_design disagreement.
+    rows.extend(_rows_for(2001, RATER_A_TAG))
+    rows.extend(_rows_for(2001, RATER_B_TAG, overrides={"study_design": "cohort"}))
+
+    df = pd.DataFrame(rows, columns=["pmid", "rater", "field", "value", "imported_at"])
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(out_path, index=False)
+
+
+def test_cli_arbitrate_export_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`arbitrate-export` writes an xlsx workbook with the 5-column Arbitration sheet."""
+    cfg = _build_synth_cfg(tmp_path)
+    monkeypatch.setattr(cli_mod, "_load_epistemic_config", lambda name: cfg)
+
+    handlabel_path = Path(str(cfg.output.handlabel_parquet))
+    _build_two_rater_handlabel_parquet(handlabel_path)
+
+    out_path = tmp_path / "arbitration.xlsx"
+    result = runner.invoke(
+        app,
+        [
+            "epistemic",
+            "arbitrate-export",
+            "--rater-a",
+            RATER_A_TAG,
+            "--rater-b",
+            RATER_B_TAG,
+            "--out",
+            str(out_path),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert out_path.exists(), "arbitration xlsx was not written"
+    # We planted one (pmid 2001) study_design disagreement.
+    assert "n_disagreements=1" in result.stdout
+
+
+def test_cli_arbitrate_import_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`arbitrate-import` round-trips agreements + filled-in arbitration to final parquet."""
+    from openpyxl import load_workbook
+
+    cfg = _build_synth_cfg(tmp_path)
+    monkeypatch.setattr(cli_mod, "_load_epistemic_config", lambda name: cfg)
+
+    handlabel_path = Path(str(cfg.output.handlabel_parquet))
+    _build_two_rater_handlabel_parquet(handlabel_path)
+
+    arb_path = tmp_path / "arbitration.xlsx"
+    export_result = runner.invoke(
+        app,
+        [
+            "epistemic",
+            "arbitrate-export",
+            "--rater-a",
+            RATER_A_TAG,
+            "--rater-b",
+            RATER_B_TAG,
+            "--out",
+            str(arb_path),
+        ],
+    )
+    assert export_result.exit_code == 0, export_result.stdout
+
+    # Fill the 'final' column for the one disagreement.
+    wb = load_workbook(arb_path)
+    ws = wb["Arbitration"]
+    header_row = [c.value for c in ws[1]]
+    final_col_idx = header_row.index("final") + 1
+    pmid_col_idx = header_row.index("pmid") + 1
+    field_col_idx = header_row.index("field") + 1
+    for row in ws.iter_rows(min_row=2):
+        pmid_cell = row[pmid_col_idx - 1].value
+        field_cell = row[field_col_idx - 1].value
+        if pmid_cell is None or field_cell is None:
+            continue
+        if int(pmid_cell) == 2001 and str(field_cell) == "study_design":
+            ws.cell(row=row[0].row, column=final_col_idx, value="RCT")
+    wb.save(arb_path)
+
+    final_path = tmp_path / "epistemic_handlabel_final.parquet"
+    result = runner.invoke(
+        app,
+        [
+            "epistemic",
+            "arbitrate-import",
+            "--rater-a",
+            RATER_A_TAG,
+            "--rater-b",
+            RATER_B_TAG,
+            "--arbitration",
+            str(arb_path),
+            "--out",
+            str(final_path),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert final_path.exists()
+    df = pd.read_parquet(final_path)
+    assert set(df["pmid"].unique()) == {2000, 2001}
+    assert "n_pmids=2" in result.stdout
