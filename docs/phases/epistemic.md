@@ -185,9 +185,33 @@ return.
   closeout rule (final ✓ waits on
   `epistemic_handlabel_final.parquet` arriving post-rater).
 
-### Carryovers into V1-S09
+### Carryovers into V1-S09 (v2 — scope redefined 2026-05-29)
 
-- Inter-rater κ on the two hand-label workbooks once they land.
-- LLM-vs-arbitrated agreement analysis using
-  `epistemic_handlabel_final.parquet` as truth.
-- Gate G2 report (V1-S09 deliverable).
+The original V1-S09 was hand-label inter-rater κ + LLM-vs-human
+agreement on a 500-abstract sample. Samer explicitly dropped this on
+2026-05-29: the goal of SciField is not to re-establish LLM extraction
+quality (already well-established in the meta-research literature),
+and hand-labeling 500 abstracts is high effort for a non-contribution
+finding.
+
+V1-S09 now executes a three-lens reliability gate **without human
+labels** (see `plans/Session-Objectives-MAP.md` §V1-S09 for the full
+spec):
+
+- **C1 — Cross-tool agreement** vs PubMed `PublicationType` MeSH for
+  RCT classification (Cohen's κ ≥ 0.7 or simple agreement ≥ 85%).
+  Trialstreamer optional stretch.
+- **C2 — Model-vs-model agreement** between the 87,268
+  `deepseek-v4-flash` extractions and the 1,981
+  `claude-via-claude-code` extractions on the 19-PMID overlap. Expand
+  to ~100–200 paired observations if needed (small DeepSeek spend,
+  Samer-approved gate).
+- **C3 — Internal-validity priors** on the corpus-wide distribution
+  (RCT prevalence, statistical-claim rate, COI rate, RCT ⇒ control
+  conditional, sample-size sanity, effect-direction skew).
+
+Hand-labeling infrastructure (`arbitrate.py`, `sampling.py`,
+`epistemic_handlabel.parquet`) remains in the codebase as optional
+future work, but is not used in this gate. BERT fine-tuning fallback
+is eliminated: if the v2 gate fails, F1 stays in the manuscript with
+a qualified Limitations note rather than a model swap.
