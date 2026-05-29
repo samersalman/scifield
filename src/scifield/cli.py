@@ -1146,6 +1146,332 @@ def epistemic_pilot(
     )
 
 
+@epistemic_app.command("extract-batch")
+def epistemic_extract_batch(
+    config: str = typer.Option("v1", "--config", "-c"),
+    submit: bool = typer.Option(False, "--submit", help="Run/extend batch extraction."),
+    status_flag: bool = typer.Option(
+        False, "--status", help="Print n_total / n_done / n_failed / n_remaining and exit."
+    ),
+    resume: bool = typer.Option(
+        False,
+        "--resume",
+        help=("Documented no-op: --submit is always resumable via the output parquet."),
+    ),
+    concurrency: int | None = typer.Option(
+        None,
+        "--concurrency",
+        help="Override cfg.extract_batch.concurrency (process-pool size).",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        help="Cap on PMIDs processed in this invocation.",
+    ),
+    retry_failed: bool = typer.Option(
+        False,
+        "--retry-failed",
+        help="With --submit, retry rows in the failures parquet instead of new PMIDs.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help=(
+            "Print the cost estimate (transport=deepseek only) and the candidate "
+            "PMID count; do NOT call the API. Use before every real run."
+        ),
+    ),
+    max_cost_usd: float = typer.Option(
+        5.0,
+        "--max-cost-usd",
+        help=(
+            "Hard cap on estimated spend for this invocation (transport=deepseek). "
+            "If the dry-run estimate exceeds this, --submit aborts before any call."
+        ),
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help=(
+            "Skip the interactive 'OK to spend ~$X?' confirmation prompt. "
+            "Only use when you've already inspected --dry-run output."
+        ),
+    ),
+) -> None:
+    """Run or report status on the V1-S08 corpus-scale extractor."""
+    from scifield.epistemic.batch import BatchConfig, list_remaining_pmids, run_batch, status
+    from scifield.epistemic.deepseek_extract import estimate_corpus_cost
+    from scifield.epistemic.extract import ExtractConfig
+
+    cfg = _load_epistemic_config(config)
+
+    # Mutually-exclusive flag check.
+    if submit == status_flag:
+        typer.echo("exactly one of --submit or --status is required")
+        raise typer.Exit(code=2)
+
+    if resume:
+        typer.echo(
+            "  note: --resume is a no-op; --submit always resumes by reading the " "output parquet."
+        )
+
+    duckdb_path = Path(str(cfg.input.duckdb_path))
+    out_path = Path(str(cfg.extract_batch.out_path))
+    failed_path = Path(str(cfg.extract_batch.failed_path))
+    conc = int(concurrency) if concurrency is not None else int(cfg.extract_batch.concurrency)
+    chunk_size = int(cfg.extract_batch.chunk_size)
+    preregistration_url = str(cfg.extract_batch.preregistration_url)
+
+    # Transport selection. Default `claude-code` preserves V1-S07 behavior;
+    # `deepseek` activates the HTTP transport and the cost-gating UX.
+    transport = str(getattr(cfg, "transport", "claude-code"))
+    deepseek_cfg = getattr(cfg, "deepseek", None)
+    if transport == "deepseek":
+        if deepseek_cfg is None:
+            typer.echo(
+                "transport: deepseek requires a `deepseek:` block in the config "
+                "(model / base_url / api_key_env)."
+            )
+            raise typer.Exit(code=2)
+        deepseek_model = str(deepseek_cfg.model)
+        deepseek_base_url = str(deepseek_cfg.base_url)
+        deepseek_api_key_env = str(deepseek_cfg.api_key_env)
+        # When the deepseek transport is active, stamp the model id with
+        # the actual API model so the parquet partitions cleanly by
+        # transport. The `cfg.model.id` value is preserved for the
+        # claude-code path only.
+        effective_model_id = deepseek_model
+    else:
+        deepseek_model = "deepseek-v4-flash"
+        deepseek_base_url = "https://api.deepseek.com"
+        deepseek_api_key_env = "DEEPSEEK_API_KEY"
+        effective_model_id = str(cfg.model.id)
+
+    extract_cfg = ExtractConfig(
+        claude_cmd=tuple(str(c) for c in cfg.pilot.claude_cmd),
+        model_id=effective_model_id,
+        prompt_version=str(cfg.prompt.version),
+        transport=transport,
+        deepseek_model=deepseek_model,
+        deepseek_base_url=deepseek_base_url,
+        deepseek_api_key_env=deepseek_api_key_env,
+    )
+
+    batch_cfg = BatchConfig(
+        duckdb_path=duckdb_path,
+        out_path=out_path,
+        failed_path=failed_path,
+        concurrency=conc,
+        chunk_size=chunk_size,
+        preregistration_url=preregistration_url,
+        extract_cfg=extract_cfg,
+    )
+
+    if status_flag:
+        if not duckdb_path.exists():
+            typer.echo(f"papers DuckDB not found at {duckdb_path}; run `scifield harvest` first.")
+            raise typer.Exit(code=1)
+        snap = status(batch_cfg)
+        n_total = int(snap["n_total"])
+        n_done = int(snap["n_done"])
+        n_failed = int(snap["n_failed"])
+        n_remaining = int(snap["n_remaining"])
+        pct = (100.0 * n_done / n_total) if n_total > 0 else 0.0
+        typer.echo(
+            f"n_total={n_total} n_done={n_done} n_failed={n_failed} "
+            f"n_remaining={n_remaining} pct_done={pct:.2f}%"
+        )
+        return
+
+    # --submit branch.
+    if not duckdb_path.exists():
+        typer.echo(f"papers DuckDB not found at {duckdb_path}; run `scifield harvest` first.")
+        raise typer.Exit(code=1)
+
+    # ----- cost gate (deepseek only) -----
+    # We always do the candidate enumeration first so the dry-run output
+    # and the cost estimate match what --submit would actually attempt.
+    if retry_failed:
+        from scifield.epistemic.batch import _list_retry_targets
+
+        candidate_pmids = [pmid for pmid, _ in _list_retry_targets(batch_cfg)]
+    else:
+        candidate_pmids = [pmid for pmid, _ in list_remaining_pmids(batch_cfg, limit=limit)]
+    n_to_run = len(candidate_pmids)
+
+    if transport == "deepseek":
+        est = estimate_corpus_cost(n_abstracts=n_to_run)
+        est_usd = float(est["estimated_usd"])
+        miss_total = int(est["prefix_miss_tokens"]) + int(est["abstract_miss_tokens"])
+        typer.echo(
+            f"cost estimate (deepseek-v4-flash): n_abstracts={n_to_run} "
+            f"estimated_usd=${est_usd:.4f} "
+            f"(input_miss_tokens={miss_total}, "
+            f"input_hit_tokens={int(est['prefix_hit_tokens'])}, "
+            f"output_tokens={int(est['output_tokens'])})"
+        )
+        if dry_run:
+            typer.echo("dry-run: no API calls made. Re-run without --dry-run to submit.")
+            return
+        if est_usd > max_cost_usd:
+            typer.echo(
+                f"ABORT: estimated cost ${est_usd:.4f} exceeds --max-cost-usd "
+                f"${max_cost_usd:.4f}. Raise the cap or pass --limit to shrink the run."
+            )
+            raise typer.Exit(code=2)
+        # Pre-flight: confirm the API key is actually set before
+        # spawning workers. Empty/missing key is a cheap pre-flight
+        # failure, not a 12k-row burn.
+        import os as _os
+
+        if not _os.environ.get(deepseek_api_key_env):
+            typer.echo(
+                f"ABORT: env var {deepseek_api_key_env} is not set. "
+                f"Add it to .env (gitignored) before --submit."
+            )
+            raise typer.Exit(code=2)
+        if not yes:
+            confirm = typer.confirm(
+                f"OK to spend up to ~${est_usd:.4f} on {n_to_run} abstracts?",
+                default=False,
+            )
+            if not confirm:
+                typer.echo("aborted by user; no API calls made.")
+                raise typer.Exit(code=1)
+    elif dry_run:
+        typer.echo(
+            f"dry-run: transport={transport} n_to_run={n_to_run}. "
+            "Cost estimation only available for transport=deepseek."
+        )
+        return
+
+    def progress(i: int, total: int, outcome: str) -> None:
+        typer.echo(f"  [{i}/{total}] {outcome}")
+
+    t_start = time.monotonic()
+    summary = run_batch(
+        batch_cfg,
+        progress=progress,
+        limit=limit,
+        retry_failed=retry_failed,
+    )
+    wall_seconds = time.monotonic() - t_start
+
+    typer.echo(
+        f"extract-batch done: n_attempted={summary.get('n_attempted', 0)} "
+        f"n_ok={summary.get('n_ok', 0)} n_failed={summary.get('n_failed', 0)} "
+        f"wall_seconds={wall_seconds:.1f} "
+        f"out={summary.get('out_path', batch_cfg.out_path)} "
+        f"failed_out={summary.get('failed_path', batch_cfg.failed_path)}"
+    )
+
+
+@epistemic_app.command("arbitrate-export")
+def epistemic_arbitrate_export(
+    config: str = typer.Option("v1", "--config", "-c"),
+    rater_a: str = typer.Option(..., "--rater-a", help="Rater A name tag (e.g. samer)."),
+    rater_b: str = typer.Option(..., "--rater-b", help="Rater B name tag (e.g. partner)."),
+    handlabel_parquet: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--handlabel-parquet",
+        help="Override the long-form handlabel parquet path.",
+    ),
+    out: Path = typer.Option(..., "--out", help="Destination xlsx path."),  # noqa: B008
+) -> None:
+    """Export the 3-column arbitration workbook for two raters (V1-S08)."""
+    from scifield.epistemic.arbitrate import (
+        export_arbitration_xlsx,
+        find_disagreements,
+        load_two_raters,
+    )
+
+    cfg = _load_epistemic_config(config)
+    handlabel_path = (
+        Path(handlabel_parquet)
+        if handlabel_parquet is not None
+        else Path(str(cfg.output.handlabel_parquet))
+    )
+
+    if not handlabel_path.exists():
+        typer.echo(f"handlabel parquet not found at {handlabel_path}")
+        raise typer.Exit(code=1)
+
+    long_df = load_two_raters(handlabel_path, rater_a, rater_b)
+    disagreements = find_disagreements(long_df, rater_a, rater_b)
+    out_path = Path(out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    export_arbitration_xlsx(disagreements, out_path, rater_a, rater_b)
+
+    n_disagreements = int(len(disagreements))
+    if n_disagreements == 0:
+        typer.echo(
+            "note: zero disagreements — workbook is structurally complete "
+            "but contains no rows to arbitrate."
+        )
+    typer.echo(f"n_disagreements={n_disagreements} out={out_path}")
+
+
+@epistemic_app.command("arbitrate-import")
+def epistemic_arbitrate_import(
+    config: str = typer.Option("v1", "--config", "-c"),
+    rater_a: str = typer.Option(..., "--rater-a", help="Rater A name tag (e.g. samer)."),
+    rater_b: str = typer.Option(..., "--rater-b", help="Rater B name tag (e.g. partner)."),
+    handlabel_parquet: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--handlabel-parquet",
+        help="Override the long-form handlabel parquet path.",
+    ),
+    arbitration: Path = typer.Option(  # noqa: B008
+        ..., "--arbitration", help="Filled-in arbitration xlsx."
+    ),
+    out: Path = typer.Option(  # noqa: B008
+        ..., "--out", help="Destination final wide-form parquet."
+    ),
+) -> None:
+    """Merge agreements + arbitrated values into the final wide-form parquet (V1-S08)."""
+    from scifield.epistemic.arbitrate import import_arbitration_xlsx
+
+    cfg = _load_epistemic_config(config)
+    handlabel_path = (
+        Path(handlabel_parquet)
+        if handlabel_parquet is not None
+        else Path(str(cfg.output.handlabel_parquet))
+    )
+
+    if not handlabel_path.exists():
+        typer.echo(f"handlabel parquet not found at {handlabel_path}")
+        raise typer.Exit(code=1)
+    if not Path(arbitration).exists():
+        typer.echo(f"arbitration xlsx not found at {arbitration}")
+        raise typer.Exit(code=1)
+
+    out_path = Path(out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    summary = import_arbitration_xlsx(
+        handlabel_path,
+        Path(arbitration),
+        rater_a,
+        rater_b,
+        out_path,
+    )
+
+    for e in summary["errors"]:
+        typer.echo(
+            f"  pmid={e.get('pmid')} field={e.get('field')} "
+            f"source={e.get('source')} error={e.get('error')}"
+        )
+
+    typer.echo(
+        f"n_pmids={summary['n_pmids']} n_agreed_fields={summary['n_agreed_fields']} "
+        f"n_arbitrated_fields={summary['n_arbitrated_fields']} "
+        f"n_errors={summary['n_errors']} out={summary['out_path']}"
+    )
+
+    if int(summary["n_errors"]) > 0:
+        raise typer.Exit(code=1)
+
+
 def main() -> None:
     app()
 

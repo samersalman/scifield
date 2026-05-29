@@ -13,3 +13,8 @@ models/
 *.parquet
 /site/
 .claude/
+
+# Secrets — never commit. DEEPSEEK_API_KEY etc.
+.env
+.env.local
+.env.*.local

@@ -63,6 +63,7 @@ __all__ = [
     "ExtractConfig",
     "ExtractionError",
     "extract_one",
+    "extract_one_subprocess",
 ]
 
 
@@ -107,6 +108,18 @@ class ExtractConfig:
     model_id: str = "claude-via-claude-code"
     prompt_version: str = PROMPT_VERSION
     timeout_s: float = 120.0
+    # --- V1-S08 transport switch ----------------------------------------
+    # Selects which backend ``extract_one_subprocess`` dispatches to.
+    # ``"claude-code"`` (default) preserves the V1-S07 subprocess path;
+    # ``"deepseek"`` routes through ``deepseek_extract.extract_one_deepseek``
+    # for cost-controlled HTTP calls. The API key is read at call time
+    # from the env var named by ``deepseek_api_key_env`` and is
+    # deliberately NOT stored on this dataclass so it cannot leak into
+    # ``.run.json`` sidecars via ``_extract_cfg_to_dict``.
+    transport: str = "claude-code"
+    deepseek_model: str = "deepseek-v4-flash"
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_api_key_env: str = "DEEPSEEK_API_KEY"
     retry_on_parse_failure: bool = True
 
 
@@ -292,3 +305,66 @@ def extract_one(
             reason=f"json/validation failure after retry: {retry_err}",
             raw_response=retry_stdout,
         ) from retry_err
+
+
+def extract_one_subprocess(
+    abstract: str,
+    pmid: int,
+    cfg: ExtractConfig,
+) -> dict[str, object]:
+    """Picklable worker entrypoint for :mod:`scifield.epistemic.batch`.
+
+    :class:`concurrent.futures.ProcessPoolExecutor` requires that the
+    callable handed to ``submit()`` be importable from a module-level
+    name (because :mod:`pickle` is what hands the work off to the worker
+    process). :func:`extract_one` itself is module-level and would be
+    picklable, but its only failure channel is a raised
+    :class:`ExtractionError`. Letting an exception cross the process
+    boundary forces the parent to re-raise it (and pickle the
+    exception, which is fragile), so the batch driver instead wants a
+    serializable outcome envelope on **both** the success and failure
+    paths.
+
+    This wrapper:
+
+    * Calls :func:`extract_one` exactly once with the supplied args.
+    * On success returns ``{"status": "ok", "extraction":
+      <EpistemicExtraction>}``. The Pydantic model is itself picklable,
+      so the parent can re-use it without re-serializing.
+    * On :class:`ExtractionError` returns ``{"status": "failed", "pmid":
+      <int>, "reason": <str>, "raw_response": <str | None>}`` so the
+      parent can write a failures-parquet row without needing to
+      reconstruct the exception type on the parent side.
+
+    Behavior of :func:`extract_one` itself is unchanged; this is a
+    pure pickle-friendly adapter so we can dispatch the existing
+    extraction path through a process pool.
+
+    Args:
+        abstract: The PubMed abstract text to extract from.
+        pmid: PubMed ID, stamped onto the returned extraction or failure
+            envelope.
+        cfg: :class:`ExtractConfig` to thread into :func:`extract_one`.
+
+    Returns:
+        A dict with key ``"status"`` set to either ``"ok"`` or
+        ``"failed"`` and the shape described above.
+    """
+    try:
+        if cfg.transport == "deepseek":
+            # Import inside the worker so the subprocess module-load cost
+            # is paid only on the deepseek path, and so unit tests for the
+            # claude-code path can stay free of the httpx import.
+            from scifield.epistemic.deepseek_extract import extract_one_deepseek
+
+            extraction = extract_one_deepseek(abstract=abstract, pmid=pmid, cfg=cfg)
+        else:
+            extraction = extract_one(abstract=abstract, pmid=pmid, cfg=cfg)
+    except ExtractionError as err:
+        return {
+            "status": "failed",
+            "pmid": err.pmid,
+            "reason": err.reason,
+            "raw_response": err.raw_response,
+        }
+    return {"status": "ok", "extraction": extraction}

@@ -35,3 +35,27 @@ model:
 
 prompt:
   version: "v0.1"
+
+extract_batch:
+  out_path: data/v1/epistemic_extracted.parquet
+  failed_path: data/v1/epistemic_failed.parquet
+  concurrency: 4
+  chunk_size: 500
+  preregistration_url: "https://doi.org/10.17605/OSF.IO/8ZJHD"
+
+# V1-S08 transport selection.
+# `claude-code`: original subprocess path (zero $$, subject to session quota).
+# `deepseek`: HTTP via api.deepseek.com using the deepseek-v4-flash model.
+# Switching transport bumps `model.id` so the parquet partitions cleanly.
+transport: deepseek
+deepseek:
+  model: deepseek-v4-flash
+  base_url: https://api.deepseek.com
+  # Name of the env var holding the API key. The key VALUE is never read
+  # from the YAML or written to any sidecar — only the env var NAME lives
+  # here. Set the value in `.env` (gitignored).
+  api_key_env: DEEPSEEK_API_KEY
+  # Process-pool concurrency is bounded by Python overhead, not the
+  # DeepSeek API (which supports 2500 concurrent requests). The default
+  # `extract_batch.concurrency` (4) is a safe starting point; tune via
+  # `--concurrency` if needed.

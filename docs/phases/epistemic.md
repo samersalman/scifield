@@ -109,3 +109,85 @@ contestable (reviews vs case series, basic science as `other`,
 ambiguous COI lines). Will run after V1-S08 handlabels exist so the
 audit has a human reference, not as speculation against the LLM's
 solo output.
+
+## V1-S08 closeout
+
+### Infrastructure landed (2026-05-23)
+
+- `src/scifield/epistemic/batch.py` — concurrent + resumable runner
+  (`ProcessPoolExecutor`, chunk-append parquet, `record_run` per
+  flush, `preregistration_url` threaded into every sidecar).
+- `src/scifield/epistemic/arbitrate.py` — disagreement detection +
+  arbitration workbook round-trip (`load_two_raters`,
+  `find_disagreements`, `export_arbitration_xlsx`,
+  `import_arbitration_xlsx`).
+- `src/scifield/epistemic/extract.py` — added picklable
+  `extract_one_subprocess` wrapper for `ProcessPoolExecutor` workers.
+- `src/scifield/cli.py` — new commands `extract-batch`,
+  `arbitrate-export`, `arbitrate-import`.
+- `conf/epistemic/v1.yaml` — new `extract_batch:` block.
+- `docs/operations/api_costs.md` — per-run usage ledger created and
+  backfilled with the V1-S07 pilot row.
+- Tests: `tests/test_epistemic_batch.py` (+4) and
+  `tests/test_epistemic_arbitrate.py` (+6) green; CLI smoke tests
+  appended to `tests/test_cli_epistemic.py` (+5). Full suite
+  184 passed, 1 skipped.
+
+### Hand-labeling workbooks shipped
+
+- `data/v1/epistemic_handlabel_samer.xlsx` — 500 rows, 6 dropdown
+  validations, Instructions + Labels sheets.
+- `data/v1/epistemic_handlabel_partner.xlsx` — same shape.
+
+Both produced via `scifield epistemic export-labels --rater {samer,
+partner} --out ...` from the frozen `data/v1/handlabel_sample.parquet`
+(Hare-rounded 500 from V1-S07). Human inter-rater work proceeds on
+its own clock; arbitration plumbing is ready to consume both
+workbooks via `arbitrate-export` / `arbitrate-import` whenever they
+return.
+
+### Smoke batch (2026-05-23, n=100, concurrency=4)
+
+- Command: `scifield epistemic extract-batch --submit --limit 100 --concurrency 4`.
+- Result: 100 / 100 ok, 0 failures.
+- Wall time: 131.2 s (~1.31 s/call effective, ~4× speedup over the
+  V1-S07 pilot's ~5 s/call sequential baseline — confirms the
+  bounded process pool scales linearly at concurrency 4 with no
+  observed Claude Code rate-limit pushback).
+- Sidecar `data/v1/epistemic_extracted.parquet.run.json` carries
+  `config.preregistration_url = "https://doi.org/10.17605/OSF.IO/8ZJHD"`
+  (PR1 acceptance gate cleared).
+- Output distribution looks plausible: `study_design` dominated by
+  case_series (35), cohort (29), other (23); `effect_direction`
+  weighted positive (45) + na (40); failed parquet empty but
+  schema-pinned. Spot-checks against the smoke output are consistent
+  with the pilot's drift profile (no new pathology).
+- See `docs/operations/api_costs.md` row `v1-s08-smoke` for the
+  ledger entry.
+
+### Full-corpus extraction (status: launchable, not yet run)
+
+- `papers_distinct WHERE abstract IS NOT NULL AND length > 50`
+  currently contains 89,230 rows (plan's 99,938 reflected an earlier
+  corpus snapshot — non-issue, the dedup + abstract filter is
+  unchanged).
+- Projected wall time at concurrency 4: ~8 h (89,230 × 1.31 s ÷ 4),
+  well under the plan's 35–55 h budget.
+- Launch with `scifield epistemic extract-batch --submit --concurrency 4`;
+  runner is resumable, so stopping and restarting is safe. Use
+  `scifield epistemic extract-batch --status` to query progress.
+  After the run completes, append a `v1-s08-full` row to
+  `docs/operations/api_costs.md` (transport `claude-code-cli`,
+  model_id `claude-via-claude-code`, sidecar path same as smoke).
+- `Session-Objectives-MAP.md` V1-S08 status: mark
+  "✓ infrastructure + LLM extraction; awaiting full-corpus run +
+  hand-label arbitration" rather than fully ✓, per the plan
+  closeout rule (final ✓ waits on
+  `epistemic_handlabel_final.parquet` arriving post-rater).
+
+### Carryovers into V1-S09
+
+- Inter-rater κ on the two hand-label workbooks once they land.
+- LLM-vs-arbitrated agreement analysis using
+  `epistemic_handlabel_final.parquet` as truth.
+- Gate G2 report (V1-S09 deliverable).
