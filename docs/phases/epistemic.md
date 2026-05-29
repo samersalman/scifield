@@ -201,11 +201,15 @@ spec):
 - **C1 — Cross-tool agreement** vs PubMed `PublicationType` MeSH for
   RCT classification (Cohen's κ ≥ 0.7 or simple agreement ≥ 85%).
   Trialstreamer optional stretch.
-- **C2 — Model-vs-model agreement** between the 87,268
-  `deepseek-v4-flash` extractions and the 1,981
-  `claude-via-claude-code` extractions on the 19-PMID overlap. Expand
-  to ~100–200 paired observations if needed (small DeepSeek spend,
-  Samer-approved gate).
+- **C2 — Model-vs-model agreement** between the `deepseek-v4-flash`
+  extractions and the 1,981 `claude-via-claude-code` extractions. NB:
+  the two V1-S08 model sets were **disjoint** (cross-model overlap = 0)
+  — the resumable DeepSeek run skipped the 1,981 PMIDs already done by
+  Claude-Code (89,230 − 1,981 = 87,249 distinct DeepSeek PMIDs), and
+  the 19 extra DeepSeek rows are DeepSeek-*internal* duplicate rows,
+  not cross-model pairs. C2 was therefore built by a spend-approved
+  DeepSeek rerun on all 1,981 Claude-Code PMIDs (see the V1-S09
+  closeout below), yielding 1,981 cross-model paired observations.
 - **C3 — Internal-validity priors** on the corpus-wide distribution
   (RCT prevalence, statistical-claim rate, COI rate, RCT ⇒ control
   conditional, sample-size sanity, effect-direction skew).
@@ -215,3 +219,57 @@ Hand-labeling infrastructure (`arbitrate.py`, `sampling.py`,
 future work, but is not used in this gate. BERT fine-tuning fallback
 is eliminated: if the v2 gate fails, F1 stays in the manuscript with
 a qualified Limitations note rather than a model swap.
+
+## V1-S09 closeout (2026-05-29)
+
+### Correction — the "19-overlap" claim was wrong
+
+A prior carryover note asserted a 19-PMID cross-model overlap between
+the two V1-S08 model sets. That was incorrect. The two sets were
+**disjoint — cross-model overlap = 0.**
+
+- `deepseek-v4-flash` covered 87,268 rows / 87,249 **distinct** PMIDs.
+  The 19-row gap (87,268 − 87,249) is DeepSeek-*internal* duplicate
+  rows, **not** cross-model pairs.
+- `claude-via-claude-code` covered 1,981 PMIDs.
+- The resumable DeepSeek runner skipped the 1,981 PMIDs already done by
+  Claude-Code, which is exactly why the sets were disjoint:
+  89,230 − 1,981 = 87,249 distinct DeepSeek PMIDs.
+
+**Fix.** A full DeepSeek rerun was executed on all 1,981 Claude-Code
+PMIDs (spend-approved per the mandatory DeepSeek gating rule; realized
+cost ≈ $0.12, logged in `docs/operations/api_costs.md` as
+`v1-s09-c2-rerun`) and appended to
+`data/v1/epistemic_extracted.parquet`. The parquet is now 91,230 rows
+— `deepseek-v4-flash` 89,249 and `claude-via-claude-code` 1,981 — and
+the 1,981 PMIDs that now carry both models form **1,981 cross-model
+paired PMIDs** (the C2 set). Dedupe to one row per PMID per model at
+analysis time.
+
+### Gate G2 — final numbers (label-free v2 gate)
+
+- **C1 — cross-tool agreement** (extracted RCT flag vs PubMed
+  `PublicationType` MeSH), N = 89,230: simple agreement **0.9832**,
+  Cohen's **κ 0.8629**; TP = 5,089 / FP = 925 / FN = 571 / TN = 82,645;
+  sensitivity 0.8991, precision 0.8462. Thresholds (≥ 0.85 agreement,
+  ≥ 0.70 κ) cleared → **PASS.**
+- **C2 — model vs model** (DeepSeek vs Claude-Code), N = 1,981:
+  `study_design` exact-match **0.8920** (κ 0.8560, ≥ 0.80 → PASS);
+  `has_control` exact-match 0.9568 (κ 0.9087); `sample_size`
+  Spearman ρ 0.9867. → **PASS.**
+- **C3 — internal-validity priors:** 6 / 6 pass — RCT prevalence
+  6.74%, statistical-claim rate 66.1%, COI-in-abstract 0.05%,
+  RCT ⇒ control conditional 99.04%, `sample_size` median 103 (the
+  max of 68.2M was adjudicated as legitimate national-database studies,
+  e.g. NHS England / National Inpatient Sample / Medicare), effect
+  direction `'na'` 35.1%. → **PASS.**
+- **Overall G2: PASS.**
+
+### Provenance + artifacts
+
+- Gate report: `docs/gates/G2_epistemic_reliability.md`.
+- Validation notebook: `notebooks/06_epistemic_validation.ipynb`.
+- Provenance: `config_hash bfd393f2…`, `git_sha e7ea1ae`.
+
+This is the **STOP gate before V1-S10 (novelty).** The numbers above
+are recorded; the proceed / qualify / fail decision is Samer's.

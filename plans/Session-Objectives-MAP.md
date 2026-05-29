@@ -55,7 +55,7 @@ Note: the existing `Version 1/` and `Version 2/` folders should be matched by a 
 | # | After session | What's decided | Pass criterion | If fail |
 |---|---|---|---|---|
 | G1 | V1-S06 | Topic structure clinically interpretable? | 20-topic spot-check passes domain-expert read | Fix embedding/clustering — do NOT continue to Phase 3 |
-| G2 | V1-S09 | Epistemic extraction reliable? | (v2, 2026-05-29; no human labels) ALL: cross-tool RCT agreement κ≥0.7 vs PubMed PublicationType MeSH; model-vs-model study_design agreement ≥80% on Claude-Code/DeepSeek overlap; six internal-validity priors all hold (see V1-S09 spec) | Document caveats in Limitations; F1 stays but reliability story qualified |
+| G2 | V1-S09 | Epistemic extraction reliable? | (v2, 2026-05-29; no human labels) ALL: cross-tool RCT agreement κ≥0.7 vs PubMed PublicationType MeSH; model-vs-model study_design agreement ≥80% on the 1,981 dual-model paired PMIDs (full DeepSeek rerun of the Claude-Code set; the two V1-S08 sets are disjoint); six internal-validity priors all hold (see V1-S09 spec) | Document caveats in Limitations; F1 stays but reliability story qualified |
 | G3 | V1-S11 | Dual-novelty 2×2 shows structure? | Semantic-structural correlation \|ρ\| < 0.4 AND ≥1 surprising-to-expert finding | Drop F2; paper pivots to F1+F3 |
 | G4 | V1-S14 | GNN beats baselines? | >5 pp emergence AUC over best baseline at 3yr horizon, Wilcoxon significant | Frame F3 as null finding or drop it |
 | G5 | V1-S16 | ≥2 of 3 findings hold? | At least 2 of {F1, F2, F3} have statistically supported, narratively coherent results | Downscope to methods + resource paper |
@@ -363,6 +363,8 @@ Pass = 20-topic spot-check reads as clinically coherent to you (or a co-author w
 
 **Scope rationale (2026-05-29 redefinition).** The original G2 was hand-label κ on a 500-abstract sample. Samer explicitly dropped this — the goal of SciField is not to re-establish LLM extraction quality (already well-established in the meta-research literature). Hand-labeling 500 abstracts is high effort for a finding that is not the paper's contribution. The redefinition substitutes three cheaper-but-still-defensible reliability lenses.
 
+**Status: in progress (2026-05-29).** V1-S08 output audited: `data/v1/epistemic_extracted.parquet` has 89,249 rows / 89,230 distinct PMIDs across two **disjoint** sets — `deepseek-v4-flash` (87,268 rows / 87,249 distinct PMIDs; 19 intra-DeepSeek duplicate rows) and `claude-via-claude-code` (1,981 rows / 1,981 distinct PMIDs). Cross-model overlap = 0; the resumable DeepSeek run skipped the PMIDs already done by Claude-Code. The previously assumed "19 overlap PMIDs" for C2 do not exist. Decision (with Samer): build the C2 lens via a full DeepSeek rerun on all 1,981 Claude-Code PMIDs, gated on spend approval per `feedback-deepseek-spend-gating`. Not yet complete — gate G2 unresolved.
+
 **Preconditions.** V1-S08 complete; `data/v1/epistemic_extracted.parquet` exists with both `deepseek-v4-flash` and `claude-via-claude-code` rows; DuckDB `papers` table carries PubMed `PublicationType` MeSH headings (verify with V1-S03 harvester output schema).
 
 **In scope.**
@@ -391,10 +393,12 @@ PubMed already classifies RCTs via the MeSH PublicationType `Randomized Controll
 
 **C2. Model-vs-model agreement: DeepSeek vs Claude Code**
 
-19 PMIDs have both a `claude-via-claude-code` row and a `deepseek-v4-flash` row from the V1-S08 dual-run. Report exact-match agreement per field on this overlap. Optionally expand to ~100–200 paired observations by re-running DeepSeek on a sample of the 1,981 Claude-Code-only PMIDs (cost ~$0.01–0.02, requires Samer's spend approval per `feedback-deepseek-spend-gating`).
+There is **no cross-model overlap** in the V1-S08 output. `data/v1/epistemic_extracted.parquet` holds 89,249 rows / 89,230 distinct PMIDs, split into two **disjoint** PMID sets: `deepseek-v4-flash` (87,268 rows, 87,249 distinct PMIDs — the 19-row gap is DeepSeek-INTERNAL duplicate rows, NOT cross-model pairs) and `claude-via-claude-code` (1,981 rows, 1,981 distinct PMIDs). The two sets share **zero** PMIDs: the resumable DeepSeek run skipped the 1,981 PMIDs already extracted by Claude-Code (89,230 − 1,981 = 87,249). The earlier "19 overlap PMIDs" reading was wrong — those 19 are intra-DeepSeek duplicates, not dual-model pairs.
+
+Because the dual-run produced no paired observations, the C2 lens is built by a **full DeepSeek rerun on all 1,981 Claude-Code PMIDs** (not a sample), using the existing Claude-Code rows as the model-vs-model comparator. This yields 1,981 dual-model paired PMIDs. The rerun requires Samer's explicit spend approval (dry-run first) per `feedback-deepseek-spend-gating`.
 
 - Pass: study_design exact-match agreement ≥ 80%; has_control exact-match agreement ≥ 80%; sample_size Spearman ρ ≥ 0.75 on PMIDs where both report a non-null value.
-- N: report whatever N is available. If N < 50, note as "underpowered model-vs-model lens" and weight C1+C3 accordingly.
+- N: 1,981 paired PMIDs once the full rerun completes. If the rerun is incomplete at gate time, report whatever N is available; if N < 50, note as "underpowered model-vs-model lens" and weight C1+C3 accordingly.
 
 **C3. Internal-validity checks: corpus-wide priors**
 
@@ -420,7 +424,7 @@ Cheap distributional sanity checks on the full 87,268 DeepSeek extractions. Each
 
 #### 🚦 GATE G2 v2 — Epistemic extraction reliability without human labels (after V1-S09)
 
-**Pass** = C1 cross-tool κ ≥ 0.7 OR agreement ≥ 85% AND C2 study_design and has_control agreement ≥ 80% on whatever overlap N is available AND all six C3 internal-validity priors hold.
+**Pass** = C1 cross-tool κ ≥ 0.7 OR agreement ≥ 85% AND C2 study_design and has_control agreement ≥ 80% on the 1,981 dual-model paired PMIDs (or whatever paired N the full DeepSeek rerun has produced at gate time) AND all six C3 internal-validity priors hold.
 
 **Qualified pass** = C1 passes AND C3 passes BUT C2 fails or N too small. F1 stays in the manuscript with an explicit caveat that model-vs-model agreement is underpowered.
 
