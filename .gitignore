@@ -14,6 +14,17 @@ models/
 /site/
 .claude/
 
+# V1-S10 novelty large data artifacts (already covered by data/ above;
+# listed explicitly for documentation — these are big binaries kept out of git).
+# NOTE: this repo does NOT track .run.json sidecars; the blanket data/ rule
+# ignores them too. No !*.run.json negation is used.
+data/v1/novelty_semantic.parquet
+data/v1/kuzu_graph/
+data/v1/kuzu_graph
+data/v1/enrichment/cited_by.parquet
+data/v1/cd_index.parquet
+data/v1/enrichment/cache/cited_by/
+
 # Secrets — never commit. DEEPSEEK_API_KEY etc.
 .env
 .env.local

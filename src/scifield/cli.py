@@ -57,6 +57,13 @@ epistemic_app = typer.Typer(
 )
 app.add_typer(epistemic_app, name="epistemic")
 
+novelty_app = typer.Typer(
+    name="novelty",
+    help="V1-S10 novelty — semantic, CD-index, Kùzu graph, cited-by harvest.",
+    no_args_is_help=True,
+)
+app.add_typer(novelty_app, name="novelty")
+
 
 def _load_config(name: str) -> DictConfig:
     """Compose a Hydra config from the repo's `conf/` directory."""
@@ -81,6 +88,12 @@ def _load_epistemic_config(name: str = "v1") -> DictConfig:
     path = Path(__file__).resolve().parents[2] / "conf" / "epistemic" / f"{name}.yaml"
     cfg = OmegaConf.load(path)
     return cast(DictConfig, cfg)
+
+
+def _load_novelty_config(name: str = "v1") -> DictConfig:
+    """Load conf/novelty/<name>.yaml directly via OmegaConf (flat — no Hydra group nesting)."""
+    path = Path(__file__).resolve().parents[2] / "conf" / "novelty" / f"{name}.yaml"
+    return cast(DictConfig, OmegaConf.load(path))
 
 
 @app.callback()
@@ -1213,7 +1226,7 @@ def epistemic_extract_batch(
 
     if resume:
         typer.echo(
-            "  note: --resume is a no-op; --submit always resumes by reading the " "output parquet."
+            "  note: --resume is a no-op; --submit always resumes by reading the output parquet."
         )
 
     duckdb_path = Path(str(cfg.input.duckdb_path))
@@ -1470,6 +1483,260 @@ def epistemic_arbitrate_import(
 
     if int(summary["n_errors"]) > 0:
         raise typer.Exit(code=1)
+
+
+@novelty_app.command("semantic")
+def novelty_semantic(
+    config: str = typer.Option("v1", "--config", "-c"),
+) -> None:
+    """Compute same-field semantic novelty against FAISS priors (V1-S10)."""
+    import math
+
+    import pandas as pd
+
+    from scifield.novelty.semantic import compute_semantic_novelty
+
+    cfg = _load_novelty_config(config)
+
+    embeddings_parquet = Path(str(cfg.input.embeddings_parquet))
+    topics_parquet = Path(str(cfg.input.topics_parquet))
+    duckdb_path = Path(str(cfg.input.duckdb_path))
+    faiss_index_path = Path(str(cfg.input.faiss_index_path))
+    faiss_pmid_map_path = Path(str(cfg.input.faiss_pmid_map_path))
+
+    if not embeddings_parquet.exists():
+        typer.echo(
+            f"embeddings parquet not found at {embeddings_parquet}; run `scifield embed` first."
+        )
+        raise typer.Exit(code=1)
+    if not topics_parquet.exists():
+        typer.echo(f"topics parquet not found at {topics_parquet}; run `scifield topics` first.")
+        raise typer.Exit(code=1)
+    if not duckdb_path.exists():
+        typer.echo(f"papers DuckDB not found at {duckdb_path}; run `scifield harvest` first.")
+        raise typer.Exit(code=1)
+    if not faiss_index_path.exists():
+        typer.echo(
+            f"FAISS index not found at {faiss_index_path}; run `scifield faiss-build` first."
+        )
+        raise typer.Exit(code=1)
+    if not faiss_pmid_map_path.exists():
+        typer.echo(
+            f"FAISS pmid map not found at {faiss_pmid_map_path}; run `scifield faiss-build` first."
+        )
+        raise typer.Exit(code=1)
+
+    noise_topic_id = int(cfg.noise_topic_id)
+
+    df: pd.DataFrame = compute_semantic_novelty(
+        embeddings_parquet=embeddings_parquet,
+        topics_parquet=topics_parquet,
+        duckdb_path=duckdb_path,
+        faiss_index_path=faiss_index_path,
+        faiss_pmid_map_path=faiss_pmid_map_path,
+        noise_topic_id=noise_topic_id,
+    )
+
+    out_path = Path(str(cfg.output.semantic_path))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(out_path, index=False)
+
+    n_rows = int(len(df))
+    n_no_prior = int((df["n_prior"] == 0).sum())
+    mean_sem_nov = float(df["sem_nov_mean"].mean(skipna=True)) if n_rows else float("nan")
+
+    record_run(
+        artifact_path=out_path,
+        inputs={
+            "embeddings_parquet": embeddings_parquet,
+            "topics_parquet": topics_parquet,
+            "papers_duckdb": duckdb_path,
+            "faiss_index": faiss_index_path,
+        },
+        config={
+            "field": str(cfg.field),
+            "noise_topic_id": noise_topic_id,
+            "n_rows": n_rows,
+            "n_no_prior": n_no_prior,
+        },
+    )
+
+    mean_str = "nan" if math.isnan(mean_sem_nov) else f"{mean_sem_nov:.4f}"
+    typer.echo(
+        f"n_rows={n_rows} n_no_prior={n_no_prior} mean_sem_nov_mean={mean_str} out={out_path}"
+    )
+
+
+@novelty_app.command("harvest-citedby")
+def novelty_harvest_citedby(
+    config: str = typer.Option("v1", "--config", "-c"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    limit: int | None = typer.Option(None, "--limit"),
+) -> None:
+    """Harvest OpenAlex cited_by (forward-citation) edges for the corpus (V1-S10)."""
+    from scifield.novelty.cited_by import CitedByConfig, run_cited_by
+
+    cfg = _load_novelty_config(config)
+
+    email = os.environ.get("OPENALEX_EMAIL")
+    if not email:
+        typer.echo("OPENALEX_EMAIL is required (polite pool); set it in env.")
+        raise typer.Exit(code=2)
+
+    cfg_obj = CitedByConfig(
+        base_url=str(cfg.harvest.base_url),
+        cache_dir=Path(str(cfg.harvest.cache_dir)),
+        manifest_dir=Path(str(cfg.harvest.manifest_dir)),
+        mailto=email,
+        api_key=os.environ.get("OPENALEX_API_KEY") or None,
+        concurrency=int(cfg.harvest.concurrency),
+        batch_size=int(cfg.harvest.batch_size),
+        rate_limit=float(cfg.harvest.rate_limit),
+        request_timeout_s=float(cfg.harvest.request_timeout_s),
+        max_retries=int(cfg.harvest.max_retries),
+        dry_run_sample_size=int(cfg.harvest.dry_run_sample_size),
+        citer_window_years=int(cfg.harvest.citer_window_years),
+        focal_batch_size=int(cfg.harvest.focal_batch_size),
+    )
+
+    duckdb_path = Path(str(cfg.input.duckdb_path))
+    if not duckdb_path.exists():
+        typer.echo(f"papers DuckDB not found at {duckdb_path}; run `scifield harvest` first.")
+        raise typer.Exit(code=1)
+
+    out_path = Path(str(cfg.output.cited_by_path))
+    report = run_cited_by(
+        duckdb_path=duckdb_path,
+        out_path=out_path,
+        cfg=cfg_obj,
+        dry_run=dry_run,
+        limit=limit,
+    )
+
+    if dry_run:
+        typer.echo(
+            f"dry-run: focal_citer_volume={int(report['focal_citer_volume'])} "
+            f"projected_ref_side_volume={int(report['projected_ref_side_volume'])} "
+            f"total_pages={int(report['total_pages'])} "
+            f"projected_wall_time_h={float(report['projected_wall_time_h']):.2f} "
+            f"projected_disk_mb={float(report['projected_disk_mb']):.1f} "
+            f"n_focal_pending={int(report['n_focal_pending'])}"
+        )
+        return
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    record_run(
+        artifact_path=out_path,
+        inputs={"papers_duckdb": duckdb_path},
+        config={
+            "mode": str(report.get("mode", "harvest")),
+            "n_focal_works": int(report["n_focal_works"]),
+            "n_focal_harvested": int(report.get("n_focal_harvested", 0)),
+            "n_focal_errors": int(report.get("n_focal_errors", 0)),
+            "n_focal_skipped": int(report.get("n_focal_skipped", 0)),
+            "n_citer_rows": int(report.get("n_citer_rows", 0)),
+            "n_cites_focal_ref_true": int(report.get("n_cites_focal_ref_true", 0)),
+            "rate_limit": float(cfg.harvest.rate_limit),
+            "limit": int(limit) if limit is not None else None,
+        },
+    )
+
+    typer.echo(
+        f"harvest done: n_focal_works={int(report['n_focal_works'])} "
+        f"n_focal_harvested={int(report.get('n_focal_harvested', 0))} "
+        f"n_focal_skipped={int(report.get('n_focal_skipped', 0))} "
+        f"n_focal_errors={int(report.get('n_focal_errors', 0))} "
+        f"n_citer_rows={int(report.get('n_citer_rows', 0))} "
+        f"n_cites_focal_ref_true={int(report.get('n_cites_focal_ref_true', 0))} "
+        f"elapsed_s={float(report.get('elapsed_s', 0.0)):.1f} out={out_path}"
+    )
+
+
+@novelty_app.command("cd")
+def novelty_cd(
+    config: str = typer.Option("v1", "--config", "-c"),
+) -> None:
+    """Compute corpus CD-index (consolidation/disruption) over the citation graph (V1-S10)."""
+    from scifield.novelty.cd_index import compute_corpus_cd
+
+    cfg = _load_novelty_config(config)
+
+    cited_by_path = Path(str(cfg.output.cited_by_path))
+    if not cited_by_path.exists():
+        typer.echo(
+            f"cited_by parquet not found at {cited_by_path}; "
+            "run `scifield novelty harvest-citedby` first (gated)."
+        )
+        raise typer.Exit(code=1)
+
+    duckdb_path = Path(str(cfg.input.duckdb_path))
+    windows = tuple(int(w) for w in cfg.cd_index.windows)
+
+    df = compute_corpus_cd(
+        duckdb_path=duckdb_path,
+        cited_by_parquet=cited_by_path,
+        windows=windows,
+    )
+
+    out_path = Path(str(cfg.output.cd_index_path))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(out_path, index=False)
+
+    n_rows = int(len(df))
+    record_run(
+        artifact_path=out_path,
+        inputs={
+            "papers_duckdb": duckdb_path,
+            "cited_by_parquet": cited_by_path,
+        },
+        config={
+            "windows": list(windows),
+            "normalization": str(cfg.cd_index.normalization),
+            "n_rows": n_rows,
+        },
+    )
+
+    typer.echo(f"cd done: n_rows={n_rows} windows={list(windows)} out={out_path}")
+
+
+@novelty_app.command("kuzu")
+def novelty_kuzu(
+    config: str = typer.Option("v1", "--config", "-c"),
+) -> None:
+    """Build the Kùzu property graph from the corpus + topic assignments (V1-S10)."""
+    from scifield.novelty.kuzu_loader import build_kuzu_graph
+
+    cfg = _load_novelty_config(config)
+
+    duckdb_path = Path(str(cfg.input.duckdb_path))
+    topics_parquet = Path(str(cfg.input.topics_parquet))
+
+    if not duckdb_path.exists():
+        typer.echo(f"papers DuckDB not found at {duckdb_path}; run `scifield harvest` first.")
+        raise typer.Exit(code=1)
+    if not topics_parquet.exists():
+        typer.echo(f"topics parquet not found at {topics_parquet}; run `scifield topics` first.")
+        raise typer.Exit(code=1)
+
+    kuzu_dir = Path(str(cfg.output.kuzu_dir))
+    counts = build_kuzu_graph(
+        duckdb_path=duckdb_path,
+        topics_parquet=topics_parquet,
+        kuzu_dir=kuzu_dir,
+    )
+
+    counts_native = {str(k): int(v) for k, v in counts.items()}
+    record_run(
+        artifact_path=kuzu_dir,
+        inputs={
+            "papers_duckdb": duckdb_path,
+            "topics_parquet": topics_parquet,
+        },
+        config=counts_native,
+    )
+
+    counts_str = " ".join(f"{k}={v}" for k, v in counts_native.items())
+    typer.echo(f"kuzu done: {counts_str} out={kuzu_dir}")
 
 
 def main() -> None:

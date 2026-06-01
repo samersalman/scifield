@@ -35,6 +35,8 @@ dependencies = [
     "pydantic>=2.0",
     "openpyxl>=3.1",
     "krippendorff>=0.6.0",
+    "kuzu>=0.6",
+    "cdindex>=1.0",
 ]
 
 [project.scripts]
