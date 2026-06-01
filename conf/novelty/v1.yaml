@@ -51,3 +51,10 @@ harvest:
   # OR-batch up to N same-year focals per `cites:W1|W2|...` query (OpenAlex caps
   # OR filters at 50). Collapses the low-cited tail's ~1-request-per-focal cost.
   focal_batch_size: 50
+
+# V1-S11 — dual-novelty 2×2 archetype binning (semantic × structural).
+archetypes:
+  semantic_metrics: [sem_nov_mean, sem_nov_min]
+  structural_metrics: [cd5, cd10]
+  split: median            # global fixed-median split (thresholds frozen corpus-wide)
+  output_path: data/v1/archetypes.parquet

@@ -1739,6 +1739,73 @@ def novelty_kuzu(
     typer.echo(f"kuzu done: {counts_str} out={kuzu_dir}")
 
 
+@novelty_app.command("archetypes")
+def novelty_archetypes(
+    config: str = typer.Option("v1", "--config", "-c"),
+) -> None:
+    """Bin papers into the dual-novelty 2×2 archetype (semantic × structural) (V1-S11)."""
+    from scifield.novelty.archetypes import compute_archetypes
+
+    cfg = _load_novelty_config(config)
+
+    duckdb_path = Path(str(cfg.input.duckdb_path))
+    semantic_path = Path(str(cfg.output.semantic_path))
+    cd_index_path = Path(str(cfg.output.cd_index_path))
+    out_path = Path(str(cfg.archetypes.output_path))
+    semantic_metrics = tuple(str(m) for m in cfg.archetypes.semantic_metrics)
+    structural_metrics = tuple(str(m) for m in cfg.archetypes.structural_metrics)
+
+    if not semantic_path.exists():
+        typer.echo(
+            f"novelty_semantic parquet not found at {semantic_path}; "
+            "run `scifield novelty semantic` first."
+        )
+        raise typer.Exit(code=1)
+    if not cd_index_path.exists():
+        typer.echo(
+            f"cd_index parquet not found at {cd_index_path}; run `scifield novelty cd` first."
+        )
+        raise typer.Exit(code=1)
+    if not duckdb_path.exists():
+        typer.echo(f"papers DuckDB not found at {duckdb_path}; run `scifield harvest` first.")
+        raise typer.Exit(code=1)
+
+    df, info = compute_archetypes(
+        duckdb_path=duckdb_path,
+        semantic_path=semantic_path,
+        cd_index_path=cd_index_path,
+        semantic_metrics=semantic_metrics,
+        structural_metrics=structural_metrics,
+    )
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(out_path, index=False)
+
+    run_config = cast(dict[str, Any], OmegaConf.to_container(cfg.archetypes, resolve=True))
+    run_config.update(
+        {
+            "thresholds": info["thresholds"],
+            "n_complete_cases": int(info["n_complete_cases"]),
+            "n_total": int(info["n_total"]),
+        }
+    )
+    record_run(
+        artifact_path=out_path,
+        inputs={
+            "papers_duckdb": duckdb_path,
+            "novelty_semantic": semantic_path,
+            "cd_index": cd_index_path,
+        },
+        config=run_config,
+    )
+
+    counts = df["arch_mean_cd5"].value_counts(dropna=True).to_dict()
+    typer.echo(
+        f"archetypes done: n_total={info['n_total']} n_complete={info['n_complete_cases']} "
+        f"mean_cd5_quadrants={counts} out={out_path}"
+    )
+
+
 def main() -> None:
     app()
 

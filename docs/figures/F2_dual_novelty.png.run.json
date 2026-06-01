@@ -1,0 +1,39 @@
+{
+  "config": {
+    "dpi": 120,
+    "figure": "F2_dual_novelty",
+    "hexbin_gridsize": 60,
+    "max_abs_pearson": 0.1828120857268922,
+    "max_abs_pearson_pairing": "sem_nov_min \u00d7 cd10",
+    "max_abs_spearman": 0.1751213563122799,
+    "max_abs_spearman_pairing": "sem_nov_min \u00d7 cd10",
+    "n_complete_cases": 81733,
+    "pairings": [
+      "sem_nov_mean x cd5",
+      "sem_nov_mean x cd10",
+      "sem_nov_min x cd5",
+      "sem_nov_min x cd10"
+    ],
+    "session": "V1-S11",
+    "source_config_hash": "458c6a94f3c314f778712d6c3d64e7b1c34018fd11f4975fc6c3d33b31f102a2",
+    "source_git_sha": "f58cf9bec8212c9348a0e44c39b6121c55394244",
+    "thresholds": {
+      "cd10": -0.45454545454545453,
+      "cd5": -0.5,
+      "sem_nov_mean": 0.43481482048347575,
+      "sem_nov_min": 0.1461571455001831
+    }
+  },
+  "config_hash": "47ad140621b9784988476d4242bebdb498e314e08f4efaf11fe6f18c3186fe59",
+  "git_dirty": true,
+  "git_sha": "f58cf9bec8212c9348a0e44c39b6121c55394244",
+  "input_hashes": {
+    "archetypes": "e1619127f48da2da33579acdba195c8a3eafd0dc6a7cb68cdf4f96a764dc29fc"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-01T02:58:08.516095+00:00"
+}
