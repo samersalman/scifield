@@ -1,0 +1,57 @@
+# V1-S12 — Forecasting config (temporal split, emergence label, baselines).
+# Flat YAML loaded via _load_forecasting_config("v1") (mirrors _load_novelty_config).
+
+input:
+  archetypes_parquet: data/v1/archetypes.parquet
+  topics_parquet: data/v1/topics.parquet
+  duckdb_path: data/v1/papers.duckdb
+
+output:
+  features_parquet: data/v1/forecasting_features.parquet
+  metrics_parquet: data/v1/forecasting_baselines.parquet
+
+# Split denotes the forecast-ORIGIN year (feature cutoff). [lo, hi] inclusive.
+split:
+  train: [1998, 2017]
+  val: [2018, 2020]
+  test: [2021, 2022]      # SEALED — never materialized in S12
+  horizon: 3
+  trailing_window: 3
+
+# Emergence label = multiplicative share growth (primary). gamma/v_min are the
+# human's scientific call — executor reports class balance for Samer to retune.
+label:
+  gamma: 1.5
+  v_min: 30
+  mode: multiplicative
+  delta: 0.002            # epsilon: growth-ratio denominator guard + additive-jump threshold + MAPE guard
+
+noise:
+  denominator: leaf_only  # share denom = leaf papers only (noise excluded num+denom)
+  noise_topic_id: -1
+
+# feature_columns: MUST be byte-identical to data.MLP_FEATURES / data.NODE_FEATURES (§4).
+features:
+  mlp_columns: [count_3yr, share_3yr_mean, share_last, share_growth_3yr, share_momentum, share_accel, share_volatility_3yr, topic_age, share_of_max]
+  node_columns: [count_3yr, share_3yr_mean, share_last, share_growth_3yr, share_momentum, share_accel, share_volatility_3yr, topic_age, share_of_max, sem_nov_mean_3yr, cd5_3yr, cd10_3yr, cited_by_pctile_3yr, rct_share_3yr, review_share_3yr, n_journals_3yr]
+
+baselines:
+  naive: {}
+  arima:
+    order: [1, 1, 0]      # (p,d,q); per-topic, falls back to naive on failure
+  mlp:
+    hidden: 32
+    epochs: 50
+    lr: 0.01
+    batch_size: 256
+    seed: 1729
+  no_graph:
+    hidden: 32
+    epochs: 50
+    lr: 0.01
+    batch_size: 256
+    seed: 1729
+
+preregistration:
+  osf_url: https://doi.org/10.17605/OSF.IO/XP94F
+  pr_doc: docs/preregistrations/PR2_forecasting.md

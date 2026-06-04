@@ -64,6 +64,13 @@ novelty_app = typer.Typer(
 )
 app.add_typer(novelty_app, name="novelty")
 
+forecasting_app = typer.Typer(
+    name="forecasting",
+    help="V1-S12 forecasting — temporal features + baselines.",
+    no_args_is_help=True,
+)
+app.add_typer(forecasting_app, name="forecasting")
+
 
 def _load_config(name: str) -> DictConfig:
     """Compose a Hydra config from the repo's `conf/` directory."""
@@ -93,6 +100,12 @@ def _load_epistemic_config(name: str = "v1") -> DictConfig:
 def _load_novelty_config(name: str = "v1") -> DictConfig:
     """Load conf/novelty/<name>.yaml directly via OmegaConf (flat — no Hydra group nesting)."""
     path = Path(__file__).resolve().parents[2] / "conf" / "novelty" / f"{name}.yaml"
+    return cast(DictConfig, OmegaConf.load(path))
+
+
+def _load_forecasting_config(name: str = "v1") -> DictConfig:
+    """Load conf/forecasting/<name>.yaml directly via OmegaConf (flat — no Hydra group nesting)."""
+    path = Path(__file__).resolve().parents[2] / "conf" / "forecasting" / f"{name}.yaml"
     return cast(DictConfig, OmegaConf.load(path))
 
 
@@ -1803,6 +1816,179 @@ def novelty_archetypes(
     typer.echo(
         f"archetypes done: n_total={info['n_total']} n_complete={info['n_complete_cases']} "
         f"mean_cd5_quadrants={counts} out={out_path}"
+    )
+
+
+def _to_jsonable(obj: Any) -> Any:
+    """Recursively coerce numpy scalars/arrays to native Python for json.dumps.
+
+    ``record_run`` ``json.dumps`` the config dict, which chokes on numpy floats /
+    ints (e.g. the ``positive_rate`` values from ``materialize``'s info dict).
+    """
+    import numpy as np
+
+    if isinstance(obj, dict):
+        return {str(k): _to_jsonable(v) for k, v in obj.items()}
+    if isinstance(obj, list | tuple):
+        return [_to_jsonable(v) for v in obj]
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, np.ndarray):
+        return [_to_jsonable(v) for v in obj.tolist()]
+    return obj
+
+
+@forecasting_app.command("features")
+def forecasting_features(
+    config: str = typer.Option("v1", "--config", "-c"),
+) -> None:
+    """Materialize leakage-safe topic-level time-series features (V1-S12)."""
+    from scifield.forecasting.data import materialize
+
+    cfg = _load_forecasting_config(config)
+
+    archetypes_parquet = Path(str(cfg.input.archetypes_parquet))
+    topics_parquet = Path(str(cfg.input.topics_parquet))
+    duckdb_path = Path(str(cfg.input.duckdb_path))
+
+    if not archetypes_parquet.exists():
+        typer.echo(
+            f"archetypes parquet not found at {archetypes_parquet}; "
+            "run `scifield novelty archetypes` first."
+        )
+        raise typer.Exit(code=1)
+    if not topics_parquet.exists():
+        typer.echo(f"topics parquet not found at {topics_parquet}; run `scifield topics` first.")
+        raise typer.Exit(code=1)
+    if not duckdb_path.exists():
+        typer.echo(f"papers DuckDB not found at {duckdb_path}; run `scifield harvest` first.")
+        raise typer.Exit(code=1)
+
+    df, info = materialize(cfg, allow_test=False)
+
+    out_path = Path(str(cfg.output.features_parquet))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(out_path, index=False)
+
+    run_config = {
+        **_to_jsonable(info),
+        "preregistration": cast(
+            dict[str, Any], OmegaConf.to_container(cfg.preregistration, resolve=True)
+        ),
+    }
+    record_run(
+        artifact_path=out_path,
+        inputs={
+            "archetypes": archetypes_parquet,
+            "topics": topics_parquet,
+            "papers_duckdb": duckdb_path,
+        },
+        config=_to_jsonable(run_config),
+    )
+
+    per_split = info["per_split"]
+    balance = "  ".join(
+        f"{name}(n={int(per_split[name]['n'])}, pos_rate={per_split[name]['positive_rate']:.4f})"
+        for name in ("train", "val")
+    )
+    typer.echo(
+        f"features done: n_rows={info['n_rows']} n_labeled={info['n_labeled']} "
+        f"n_excluded_volume={info['n_excluded_volume']} noise_frac={info['noise_frac']:.3f} "
+        f"denominator={info['denominator']}  class_balance: {balance}  out={out_path}"
+    )
+
+
+@forecasting_app.command("baselines")
+def forecasting_baselines(
+    config: str = typer.Option("v1", "--config", "-c"),
+) -> None:
+    """Fit + score the four forecasting baselines on the validation set (V1-S12)."""
+    import pandas as pd
+
+    from scifield.forecasting.baselines.evaluate import per_topic_scores, run_baselines
+
+    cfg = _load_forecasting_config(config)
+
+    features_parquet = Path(str(cfg.output.features_parquet))
+    if not features_parquet.exists():
+        typer.echo(
+            f"forecasting features parquet not found at {features_parquet}; "
+            "run `scifield forecasting features` first."
+        )
+        raise typer.Exit(code=1)
+
+    df = pd.read_parquet(features_parquet)
+
+    metrics = run_baselines(df, cfg)
+
+    metrics_path = Path(str(cfg.output.metrics_parquet))
+    metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    metrics.to_parquet(metrics_path, index=False)
+
+    # Stage the per-topic score arrays (long form) for the later V1-S14 Wilcoxon.
+    staged = per_topic_scores(df, cfg)
+    rows: list[dict[str, Any]] = []
+    for name, arrays in staged.items():
+        n = len(arrays["topic_id"])
+        for i in range(n):
+            rows.append(
+                {
+                    "baseline": name,
+                    "topic_id": int(arrays["topic_id"][i]),
+                    "origin_year": int(arrays["origin_year"][i]),
+                    "emergence_score": float(arrays["emergence_score"][i]),
+                    "emergent": int(arrays["emergent"][i]),
+                    "share_forecast": float(arrays["share_forecast"][i]),
+                    "forward_share": float(arrays["forward_share"][i]),
+                }
+            )
+    per_topic_cols = [
+        "baseline",
+        "topic_id",
+        "origin_year",
+        "emergence_score",
+        "emergent",
+        "share_forecast",
+        "forward_share",
+    ]
+    per_topic_df = pd.DataFrame(rows, columns=per_topic_cols)
+    per_topic_path = metrics_path.parent / "forecasting_per_topic_scores.parquet"
+    per_topic_df.to_parquet(per_topic_path, index=False)
+
+    prereg = cast(dict[str, Any], OmegaConf.to_container(cfg.preregistration, resolve=True))
+    metrics_config = {
+        "preregistration": prereg,
+        "n_baselines": int(len(metrics)),
+        "n_train": int(metrics["n_train"].iloc[0]) if len(metrics) else 0,
+        "n_val": int(metrics["n_val"].iloc[0]) if len(metrics) else 0,
+        "n_val_pos": int(metrics["n_val_pos"].iloc[0]) if len(metrics) else 0,
+    }
+    record_run(
+        artifact_path=metrics_path,
+        inputs={"forecasting_features": features_parquet},
+        config=_to_jsonable(metrics_config),
+    )
+    record_run(
+        artifact_path=per_topic_path,
+        inputs={"forecasting_features": features_parquet},
+        config=_to_jsonable({"preregistration": prereg, "n_rows": int(len(per_topic_df))}),
+    )
+
+    typer.echo("baselines done:")
+    for _, row in metrics.iterrows():
+        fb = row["fallback_frac"]
+        fb_str = "nan" if pd.isna(fb) else f"{float(fb):.3f}"
+        auc = row["emergence_auc"]
+        auc_str = "nan" if pd.isna(auc) else f"{float(auc):.4f}"
+        mape = row["share_mape"]
+        mape_str = "nan" if pd.isna(mape) else f"{float(mape):.4f}"
+        typer.echo(
+            f"  {row['baseline']:>9}  AUC={auc_str}  MAPE={mape_str}  fallback_frac={fb_str}"
+        )
+    typer.echo(
+        f"  n_train={metrics_config['n_train']} n_val={metrics_config['n_val']} "
+        f"n_val_pos={metrics_config['n_val_pos']}  "
+        f"metrics={metrics_path}  per_topic={per_topic_path}"
     )
 
 

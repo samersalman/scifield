@@ -497,7 +497,17 @@ Pass = \|ρ\| < 0.4 AND ≥1 surprising-to-expert finding in the archetype distr
 
 ---
 
-### V1-S12 — Forecasting: OSF pre-registration #2, temporal CV, all baselines
+### V1-S12 ✓ — Forecasting: OSF pre-registration #2, temporal CV, all baselines
+
+> **Status: ✓ complete — OSF pre-registration #2 submitted, protocol locked, committed 2026-06-03.**
+> PR2 registered on OSF (DOI [10.17605/OSF.IO/XP94F](https://doi.org/10.17605/OSF.IO/XP94F),
+> submission SHA `670a74b`, Samer G. Salman 2026-06-03); the DOI is baked into
+> `PR2_forecasting.md` + `conf/forecasting/v1.yaml` and re-stamped into the (gitignored) baseline
+> sidecars. Leakage-safe feature pipeline + temporal split + all 4 baselines built and evaluated
+> on the validation set (best baseline = `no_graph`, emergence AUC 0.701); `uv run pytest`
+> (300 passed) and `pre-commit` green. Protocol locked with `gamma=1.5`/`v_min=30` (train positive
+> rate 4.24% accepted as-is per Samer's call — registering the DOI fixes those values).
+> **V1-S13 (HGT/TGN GNN) is unblocked.**
 
 **Phase:** 5 (Forecasting) | **Plan ref:** §5 Phase 5 | **Effort:** ~2 days | **Depends on:** V1-S11 + G3 resolved
 

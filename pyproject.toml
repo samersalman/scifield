@@ -37,6 +37,7 @@ dependencies = [
     "krippendorff>=0.6.0",
     "kuzu>=0.6",
     "cdindex>=1.0",
+    "statsmodels>=0.14",
 ]
 
 [project.scripts]

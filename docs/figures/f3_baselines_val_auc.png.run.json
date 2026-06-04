@@ -1,0 +1,35 @@
+{
+  "config": {
+    "baselines": [
+      "no_graph",
+      "arima",
+      "mlp",
+      "naive"
+    ],
+    "dpi": 120,
+    "emergence_auc": {
+      "arima": 0.697259008315368,
+      "mlp": 0.6473668001231907,
+      "naive": 0.43547890360332614,
+      "no_graph": 0.7009547274407144
+    },
+    "figure": "f3_baselines_val_auc",
+    "session": "V1-S12",
+    "source_metrics_config_hash": "88a7c4a2407aacfae7f53b6291e64830f144b7759ed7ba6ad05fe589d2cac086",
+    "source_metrics_git_sha": "670a74b7c5f9aaff98bb88316dfbad301952fd08",
+    "split": "val"
+  },
+  "config_hash": "a8b24cbbcc2d2d22b80e687c3afce8b095169fb19aacf2fa8ab80a5e63aae19e",
+  "git_dirty": true,
+  "git_sha": "670a74b7c5f9aaff98bb88316dfbad301952fd08",
+  "input_hashes": {
+    "features": "a8414d4158868bd0fc769157addd86b31a0cde8a1f096b21a246ba24aee7b8d8",
+    "metrics": "fbe560d4060c04f825d7e8305940f7182523adcca764471854f02740bfd6da09"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-04T02:02:39.255229+00:00"
+}
