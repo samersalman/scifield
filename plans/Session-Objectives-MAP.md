@@ -591,7 +591,24 @@ Pass = \|ρ\| < 0.4 AND ≥1 surprising-to-expert finding in the archetype distr
 
 ---
 
-### V1-S14 — Forecasting evaluation, calibration, Wilcoxon, Gate G4 report
+### V1-S14 ✓ — Forecasting evaluation, calibration, Wilcoxon, Gate G4 report
+
+> **Status: ✓ complete — sealed test set scored ONCE; $0, CPU-only; committed 2026-06-05 (gate report UNSIGNED, awaiting Samer's decision).**
+> Result: **NULL FINDING.** On the sealed test (forecast-origin years 2021–2022; n_test=138, 13 positives) HGT
+> emergence AUC = **0.781** vs. the val-selected best baseline `no_graph` **0.804** — Δ **−2.34pp** (H1 FAIL: not
+> just short of the +5pp bar, but on the wrong side of zero). The pre-registered paired per-row Brier-loss
+> Wilcoxon (HGT vs. `no_graph`, unit = (topic, origin_year)) is `p = 2.6e-11` **but direction = favors_baseline**
+> (HGT significantly worse-calibrated — severe over-prediction), so H2 does **not** support F3.
+> `overall_pass = H1 ∧ H2 = False` → mechanical recommendation **NULL FINDING** (publishable per plan §6:
+> "graph structure did not improve 3-yr emergence forecasting over a graph-free baseline on the sealed test").
+> Deliverables: `forecasting/evaluate.py` (pure pre-registered stats), the single controlled
+> `scifield forecasting gnn-eval` CLI, `notebooks/10_forecasting_eval.ipynb` (executed end-to-end),
+> `docs/figures/F3_forecasting.png`, `docs/gates/G4_forecasting.md` (UNSIGNED), `tests/test_forecasting_eval.py`.
+> The frozen `models/v1/hgt_best.pt` is **byte-unchanged** (no retraining; checksum-verified); the 5 test
+> artifacts are gitignored (regenerable via `gnn-eval`) with OSF-DOI
+> [10.17605/OSF.IO/XP94F](https://doi.org/10.17605/OSF.IO/XP94F) sidecars.
+> **STOP — awaits Samer's human Gate G4 decision** (PASS / NULL / DROP) in `docs/gates/G4_forecasting.md`;
+> V1-S15 is gated on it.
 
 **Phase:** 5 (Forecasting) | **Plan ref:** §5 Phase 5 + Gate after Phase 5 | **Effort:** ~1 day | **Depends on:** V1-S13
 
@@ -620,6 +637,8 @@ Pass = \|ρ\| < 0.4 AND ≥1 surprising-to-expert finding in the archetype distr
 #### 🚦 GATE G4 — Forecasting beats baselines (after V1-S14)
 
 Pass = HGT > best baseline by >5 pp emergence AUC at 3yr horizon, Wilcoxon p<0.05. Fail = F3 is framed as a null finding ("graph structure does not add forecasting value beyond temporal features") — itself publishable per plan §6 row 4. Do not retrain on test data, do not p-hack, do not amend the pre-registration except via a clearly-logged deviation note.
+
+> **Computed (V1-S14, 2026-06-05): mechanical verdict = NULL FINDING** — HGT −2.34pp vs. `no_graph` (H1 FAIL); paired Brier-loss Wilcoxon p=2.6e-11 but favoring the baseline (H2 does not support F3); `overall_pass = False`. The single sealed-test touch is done and the frozen checkpoint is byte-unchanged. **Awaiting Samer's human sign-off** in `docs/gates/G4_forecasting.md` before V1-S15.
 
 ---
 

@@ -4,12 +4,16 @@ These tests cover the CLI plumbing ONLY — the real graph build lives in
 ``test_forecasting_gnn_loader.py``, the trainer in ``test_forecasting_gnn_train.py``,
 and the Optuna sweep in ``test_forecasting_gnn_sweep.py``. Here we patch the heavy
 compute (``build_year_snapshots`` / ``_load_gnn_snapshots`` / ``train_hgt`` /
-``run_sweep``) and exercise the three commands end to end with tmp_path fixtures,
-asserting exit codes, that the per-year snapshot counts are echoed, that the
-``gnn-train`` checkpoint sidecar (``hgt_train_best.pt.run.json``) is written and
-— per the plan's Verification — carries the ``preregistration`` block, that
-``--resume`` flows through into ``train_hgt``, and that ``gnn-sweep`` does NOT
-itself double-write the sweep's own sidecars.
+``run_sweep`` / ``materialize`` / ``load_forecaster``) and exercise the four
+commands end to end with tmp_path fixtures, asserting exit codes, that the per-year
+snapshot counts are echoed, that the ``gnn-train`` checkpoint sidecar
+(``hgt_train_best.pt.run.json``) is written and — per the plan's Verification —
+carries the ``preregistration`` block, that ``--resume`` flows through into
+``train_hgt``, and that ``gnn-sweep`` does NOT itself double-write the sweep's own
+sidecars. The V1-S14 ``gnn-eval`` smoke test additionally proves the frozen
+checkpoint is loaded (never retrained / clobbered), that ``materialize`` is called
+with ``allow_test=True``, and that all five sealed-test artifacts + their sidecars
+land with the pre-registered verdict keys.
 """
 
 from __future__ import annotations
@@ -57,6 +61,11 @@ def _build_synth_cfg(tmp_path: Path) -> DictConfig:
                 "sweep_parquet": str(tmp_path / "forecasting_sweep.parquet"),
                 "checkpoint": str(tmp_path / "models" / "hgt_best.pt"),
                 "study_db": str(tmp_path / "models" / "hgt_study.db"),
+                "test_metrics_parquet": str(tmp_path / "forecasting_test_metrics.parquet"),
+                "test_per_unit_parquet": str(tmp_path / "forecasting_test_per_unit.parquet"),
+                "test_calibration_parquet": str(tmp_path / "forecasting_test_calibration.parquet"),
+                "test_sensitivity_parquet": str(tmp_path / "forecasting_test_sensitivity.parquet"),
+                "test_wilcoxon_json": str(tmp_path / "forecasting_test_wilcoxon.json"),
             },
             "split": {
                 "train": [1998, 2017],
@@ -67,6 +76,18 @@ def _build_synth_cfg(tmp_path: Path) -> DictConfig:
             },
             "label": {"gamma": 1.5, "v_min": 30, "mode": "multiplicative", "delta": 0.002},
             "noise": {"denominator": "leaf_only", "noise_topic_id": -1},
+            # Mirrors v1.yaml: gnn-eval's _build_predictors reads features.* +
+            # baselines.* to fit the four baselines on the TRAIN slice.
+            "features": {
+                "mlp_columns": list(_NODE_FEATURE_COLS[:9]),
+                "node_columns": list(_NODE_FEATURE_COLS),
+            },
+            "baselines": {
+                "naive": {},
+                "arima": {"order": [1, 1, 0]},
+                "mlp": {"hidden": 8, "epochs": 2, "lr": 0.01, "batch_size": 256, "seed": 1729},
+                "no_graph": {"hidden": 8, "epochs": 2, "lr": 0.01, "batch_size": 256, "seed": 1729},
+            },
             "gnn": {
                 "conv_type": "hgt",
                 "hidden": 64,
@@ -142,6 +163,99 @@ def _fake_snapshots() -> dict[int, Any]:
     return {1998: object(), 1999: object(), 2000: object()}
 
 
+# All 16 GNN node features (= MLP_FEATURES + 7 trailing cols) the materialized
+# frame carries; the four baselines + the calibration/sensitivity paths read a
+# subset, so we plant the full set with finite values.
+_NODE_FEATURE_COLS = (
+    "count_3yr",
+    "share_3yr_mean",
+    "share_last",
+    "share_growth_3yr",
+    "share_momentum",
+    "share_accel",
+    "share_volatility_3yr",
+    "topic_age",
+    "share_of_max",
+    "sem_nov_mean_3yr",
+    "cd5_3yr",
+    "cd10_3yr",
+    "cited_by_pctile_3yr",
+    "rct_share_3yr",
+    "review_share_3yr",
+    "n_journals_3yr",
+)
+
+
+def _fake_materialized_df() -> pd.DataFrame:
+    """A tiny materialized frame WITH train AND test rows for the eval harness.
+
+    The four baselines fit on the TRAIN labeled slice and every model is scored on
+    the TEST labeled slice, so we need rows in BOTH splits (all ``volume_ok`` &
+    ``label_complete``) and BOTH emergent classes in the test slice (so AUC, the
+    paired tests, and calibration are all well defined). All NODE_FEATURES columns
+    are present with finite values plus the three label variants + ``forward_share``.
+    """
+    import numpy as np
+
+    rng = np.random.default_rng(1729)
+    rows = []
+    # 6 train rows (origins 2015-2017) + 6 test rows (origins 2021-2022), mixed labels.
+    plan = [
+        ("train", 2015),
+        ("train", 2016),
+        ("train", 2017),
+        ("train", 2015),
+        ("train", 2016),
+        ("train", 2017),
+        ("test", 2021),
+        ("test", 2022),
+        ("test", 2021),
+        ("test", 2022),
+        ("test", 2021),
+        ("test", 2022),
+    ]
+    for i, (split, year) in enumerate(plan):
+        emergent = i % 2  # guarantees both classes appear in train AND test
+        row: dict[str, Any] = {
+            "topic_id": i,
+            "origin_year": year,
+            "split": split,
+            "volume_ok": True,
+            "label_complete": True,
+            "emergent": emergent,
+            "emergent_additive": (i // 2) % 2,
+            "emergent_count_surge": (i + 1) % 2,
+            "forward_share": float(0.05 + 0.01 * i),
+        }
+        for c in _NODE_FEATURE_COLS:
+            row[c] = float(rng.uniform(0.01, 0.99))
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+class _FakeForecaster:
+    """A stand-in restored HGT: scores from a feature column; ``fit`` must NOT run."""
+
+    name = "hgt"
+
+    def predict(self, features: pd.DataFrame) -> Any:
+        import numpy as np
+
+        from scifield.forecasting.baselines.base import ForecastPrediction
+
+        n = len(features)
+        # Derive a deterministic probability in [0, 1] from a present feature column.
+        base = features["share_3yr_mean"].to_numpy(dtype=float) if n else np.empty(0)
+        emergence_score = np.clip(base, 0.0, 1.0)
+        share_forecast = np.clip(
+            features["share_last"].to_numpy(dtype=float) if n else np.empty(0), 0.0, None
+        )
+        return ForecastPrediction(emergence_score=emergence_score, share_forecast=share_forecast)
+
+    def fit(self, *_a: Any, **_k: Any) -> Any:  # pragma: no cover - must never run
+        raise AssertionError("load_forecaster result must NOT be retrained in gnn-eval")
+
+
 # ---------------------------------------------------------------------------
 # Help
 # ---------------------------------------------------------------------------
@@ -150,7 +264,7 @@ def _fake_snapshots() -> dict[int, Any]:
 def test_forecasting_gnn_help_lists_subcommands() -> None:
     result = runner.invoke(app, ["forecasting", "--help"])
     assert result.exit_code == 0, result.stdout
-    for cmd in ("gnn-snapshots", "gnn-train", "gnn-sweep"):
+    for cmd in ("gnn-snapshots", "gnn-train", "gnn-sweep", "gnn-eval"):
         assert cmd in result.stdout, f"missing {cmd!r} in help output"
 
 
@@ -443,3 +557,186 @@ def test_gnn_sweep_errors_on_missing_features(
     result = runner.invoke(app, ["forecasting", "gnn-sweep"])
     assert result.exit_code == 1, result.stdout
     assert "forecasting features parquet not found" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# gnn-eval (V1-S14 / Gate G4 — the one controlled sealed-test-set touch)
+# ---------------------------------------------------------------------------
+
+
+def test_gnn_eval_smoke_writes_all_artifacts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`gnn-eval` scores the frozen HGT + baselines once and writes 5 artifacts.
+
+    Verification: the checkpoint is LOADED (never retrained — the fake forecaster's
+    ``fit`` raises) and byte-UNCHANGED after the run; ``materialize`` is called with
+    ``allow_test=True`` (the only way the test slice exists); all five sealed-test
+    artifacts and their ``record_run`` sidecars land; the Wilcoxon JSON carries the
+    pre-registered verdict keys; and a sidecar references the OSF pre-registration.
+    """
+    cfg = _build_synth_cfg(tmp_path)
+    monkeypatch.setattr(cli_mod, "_load_forecasting_config", lambda name: cfg)
+
+    # Plant the guarded inputs + the frozen checkpoint (so guards + record_run pass).
+    _touch(Path(str(cfg.input.duckdb_path)))
+    _touch(Path(str(cfg.input.topics_parquet)))
+    _touch(Path(str(cfg.input.archetypes_parquet)))
+    checkpoint_path = Path(str(cfg.output.checkpoint))
+    _touch(checkpoint_path, content=b"FROZEN-HGT-CHECKPOINT-BYTES")
+    checkpoint_bytes_before = checkpoint_path.read_bytes()
+
+    # The real graph build is mocked; assert_snapshot_no_leakage is unit-tested in
+    # test_forecasting_gnn_loader.py, so we do NOT build a heavy DuckDB fixture here.
+    build_calls: dict[str, Any] = {}
+
+    def fake_build_year_snapshots(cfg_in: Any, *, years: Any = None) -> dict[int, dict[str, Any]]:
+        build_calls["years"] = years
+        return {int(y): {"path": f"/tmp/snapshot_{y}.pt"} for y in (years or [])}
+
+    monkeypatch.setattr(
+        "scifield.forecasting.gnn.loader.build_year_snapshots", fake_build_year_snapshots
+    )
+
+    snap_calls: dict[str, Any] = {}
+
+    def fake_load_snapshots(
+        cfg_in: Any, *, build: bool, include_test: bool = False
+    ) -> dict[int, Any]:
+        snap_calls["build"] = build
+        snap_calls["include_test"] = include_test
+        return _fake_snapshots()
+
+    monkeypatch.setattr(cli_mod, "_load_gnn_snapshots", fake_load_snapshots)
+
+    # materialize MUST be called with allow_test=True — capture its kwargs.
+    materialize_calls: dict[str, Any] = {}
+
+    def fake_materialize(cfg_in: Any, *, allow_test: bool = False) -> tuple[pd.DataFrame, dict]:
+        materialize_calls["allow_test"] = allow_test
+        return _fake_materialized_df(), {}
+
+    monkeypatch.setattr("scifield.forecasting.data.materialize", fake_materialize)
+
+    # load_forecaster returns the frozen, predict-ready forecaster; its fit raises.
+    loader_calls: dict[str, Any] = {}
+
+    def fake_load_forecaster(ckpt_path: Any, snapshots: Any) -> _FakeForecaster:
+        loader_calls["ckpt_path"] = Path(str(ckpt_path))
+        loader_calls["snapshots"] = snapshots
+        return _FakeForecaster()
+
+    monkeypatch.setattr("scifield.forecasting.train.load_forecaster", fake_load_forecaster)
+
+    result = runner.invoke(app, ["forecasting", "gnn-eval"])
+    assert result.exit_code == 0, result.stdout
+
+    # The sealed-test snapshots were built for the TEST origin years (2021, 2022),
+    # then the full range loaded with include_test=True.
+    assert build_calls["years"] == [2021, 2022]
+    assert snap_calls == {"build": False, "include_test": True}
+
+    # materialize was opened with the S14 escape hatch.
+    assert materialize_calls["allow_test"] is True
+
+    # The frozen checkpoint was loaded from the configured path...
+    assert loader_calls["ckpt_path"] == checkpoint_path
+    # ...and is byte-UNCHANGED afterwards (no retrain / clobber).
+    assert checkpoint_path.read_bytes() == checkpoint_bytes_before
+
+    # All five artifacts + their record_run sidecars exist.
+    artifacts = {
+        "metrics": Path(str(cfg.output.test_metrics_parquet)),
+        "per_unit": Path(str(cfg.output.test_per_unit_parquet)),
+        "calibration": Path(str(cfg.output.test_calibration_parquet)),
+        "sensitivity": Path(str(cfg.output.test_sensitivity_parquet)),
+        "wilcoxon": Path(str(cfg.output.test_wilcoxon_json)),
+    }
+    for name, path in artifacts.items():
+        assert path.exists(), f"missing {name} artifact at {path}"
+        assert Path(str(path) + ".run.json").exists(), f"missing {name} sidecar"
+
+    # The metrics parquet has the five models in the locked row order + columns.
+    metrics = pd.read_parquet(artifacts["metrics"])
+    assert list(metrics["model"]) == ["naive", "arima", "mlp", "no_graph", "hgt"]
+    assert list(metrics.columns) == [
+        "model",
+        "emergence_auc",
+        "share_mape",
+        "n_train",
+        "n_test",
+        "n_test_pos",
+        "fallback_frac",
+    ]
+
+    # The per-unit parquet is tidy/long: one block per model, locked columns.
+    per_unit = pd.read_parquet(artifacts["per_unit"])
+    assert list(per_unit.columns) == [
+        "model",
+        "topic_id",
+        "origin_year",
+        "emergence_score",
+        "emergent",
+        "emergent_additive",
+        "emergent_count_surge",
+        "share_forecast",
+        "forward_share",
+    ]
+    assert set(per_unit["model"].unique()) == {"naive", "arima", "mlp", "no_graph", "hgt"}
+
+    # Calibration carries the leading model column for hgt + no_graph.
+    calib = pd.read_parquet(artifacts["calibration"])
+    assert calib.columns[0] == "model"
+    assert set(calib["model"].unique()) == {"hgt", "no_graph"}
+
+    # Sensitivity has the three pre-registered label variants.
+    sens = pd.read_parquet(artifacts["sensitivity"])
+    assert list(sens["variant"]) == ["primary", "additive_jump", "count_surge"]
+
+    # A sidecar references the OSF pre-registration.
+    sidecar = json.loads(Path(str(artifacts["metrics"]) + ".run.json").read_text())
+    assert (
+        sidecar["config"]["preregistration"]["osf_url"] == "https://doi.org/10.17605/OSF.IO/XP94F"
+    )
+    assert sidecar["config"]["comparator"] == "no_graph"
+    assert sidecar["config"]["margin_pp"] == 5.0
+    assert sidecar["config"]["alpha"] == 0.05
+
+    # The Wilcoxon JSON has the three top-level keys + the verdict sub-keys.
+    wil = json.loads(artifacts["wilcoxon"].read_text())
+    assert set(wil) == {"primary_brier", "secondary_raw_score", "verdict"}
+    for key in ("overall_pass", "mechanical_recommendation", "h2_direction"):
+        assert key in wil["verdict"], f"verdict missing {key!r}"
+    assert "pvalue" in wil["primary_brier"]
+    assert "pvalue" in wil["secondary_raw_score"]
+
+    # The summary echoes the gate verdict line.
+    assert "gnn-eval done" in result.stdout
+    assert "GATE G4" in result.stdout
+    assert "overall_pass=" in result.stdout
+
+
+def test_gnn_eval_errors_on_missing_checkpoint(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`gnn-eval` with inputs present but NO frozen checkpoint => exit 1, no build."""
+    cfg = _build_synth_cfg(tmp_path)
+    monkeypatch.setattr(cli_mod, "_load_forecasting_config", lambda name: cfg)
+
+    # Inputs present, checkpoint absent -> the checkpoint guard trips last.
+    _touch(Path(str(cfg.input.duckdb_path)))
+    _touch(Path(str(cfg.input.topics_parquet)))
+    _touch(Path(str(cfg.input.archetypes_parquet)))
+
+    def _boom_build(*_a: Any, **_k: Any) -> dict[int, dict[str, Any]]:
+        raise AssertionError("build_year_snapshots must not run when the checkpoint is missing")
+
+    def _boom_load(*_a: Any, **_k: Any) -> Any:
+        raise AssertionError("load_forecaster must not run when the checkpoint is missing")
+
+    monkeypatch.setattr("scifield.forecasting.gnn.loader.build_year_snapshots", _boom_build)
+    monkeypatch.setattr("scifield.forecasting.train.load_forecaster", _boom_load)
+
+    result = runner.invoke(app, ["forecasting", "gnn-eval"])
+    assert result.exit_code == 1, result.stdout
+    assert "frozen HGT checkpoint not found" in result.stdout

@@ -1,0 +1,30 @@
+{
+  "config": {
+    "ablation_delta_pp": -2.3384615384615337,
+    "auc_hgt": 0.7809230769230769,
+    "auc_no_graph": 0.8043076923076923,
+    "brier_direction": "favors_baseline",
+    "brier_pvalue": 2.6290290374285356e-11,
+    "dpi": 120,
+    "figure": "F3_forecasting",
+    "n_test": 138,
+    "n_test_pos": 13,
+    "overall_pass": false,
+    "session": "V1-S14",
+    "source_metrics_config_hash": "6d739ccdc650bfdd742992330c7c0d04ae9abd490f1bf12afad254b5a8574a05",
+    "source_metrics_git_sha": "7c737d402976a2f2c65722a4972c6e029ac28ef1"
+  },
+  "config_hash": "480008c7ca5bcd89e967cdd8fb30eac774e6a5441bedf650ae244185ad67b544",
+  "git_dirty": true,
+  "git_sha": "7c737d402976a2f2c65722a4972c6e029ac28ef1",
+  "input_hashes": {
+    "metrics": "864cc9007fc9065302659cf91d24089a620db22a52e1242ccf492ab3ec680b5b",
+    "wilcoxon": "7a7a037561a96151d2401a63d5aabdafd24e1b936ad85e683630f1c77c99b5b2"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-05T06:59:11.970987+00:00"
+}

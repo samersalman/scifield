@@ -1992,8 +1992,10 @@ def forecasting_baselines(
     )
 
 
-def _load_gnn_snapshots(cfg: DictConfig, *, build: bool) -> dict[int, Any]:
-    """Return ``{origin_year -> HeteroData}`` for the train∪val origin years (V1-S13).
+def _load_gnn_snapshots(
+    cfg: DictConfig, *, build: bool, include_test: bool = False
+) -> dict[int, Any]:
+    """Return ``{origin_year -> HeteroData}`` for the relevant origin years (V1-S13).
 
     The HGT trainer and the Optuna sweep both fit on the SAME per-origin-year
     ``HeteroData`` snapshots, so building (or loading) them is factored here. When
@@ -2001,20 +2003,26 @@ def _load_gnn_snapshots(cfg: DictConfig, *, build: bool) -> dict[int, Any]:
     caches ``snapshot_{t}.pt`` under ``cfg.output.snapshots_dir`` and returns the
     per-year ``meta`` dicts; we then load each cached ``.pt`` back into a live
     ``HeteroData``. When ``build`` is False we expect the ``.pt`` files to already
-    exist for every train∪val year and load them directly (no DuckDB hit).
+    exist for every requested year and load them directly (no DuckDB hit).
+
+    ``include_test`` extends the range through the SEALED test origin years (the
+    V1-S14 / Gate G4 escape hatch): the upper bound becomes ``cfg.split.test[1]``
+    instead of ``cfg.split.val[1]``, so the loaded set covers ``train.lo .. test.hi``
+    inclusive. Default ``False`` preserves the train∪val behavior exactly for the
+    S13 callers (``gnn-train`` / ``gnn-sweep``), which never touch the test slice.
     """
     from scifield.forecasting.gnn.loader import build_year_snapshots, load_snapshot
 
+    train_lo = int(cfg.split.train[0])
+    hi = int(cfg.split.test[1]) if include_test else int(cfg.split.val[1])
+
     if build:
-        metas = build_year_snapshots(cfg)
+        years = list(range(train_lo, hi + 1)) if include_test else None
+        metas = build_year_snapshots(cfg, years=years)
         return {int(t): load_snapshot(m["path"]) for t, m in metas.items()}
 
     snapshots_dir = Path(str(cfg.output.snapshots_dir))
-    train_lo = int(cfg.split.train[0])
-    val_hi = int(cfg.split.val[1])
-    return {
-        t: load_snapshot(snapshots_dir / f"snapshot_{t}.pt") for t in range(train_lo, val_hi + 1)
-    }
+    return {t: load_snapshot(snapshots_dir / f"snapshot_{t}.pt") for t in range(train_lo, hi + 1)}
 
 
 @forecasting_app.command("gnn-snapshots")
@@ -2195,6 +2203,183 @@ def forecasting_gnn_sweep(
     typer.echo(f"  best_params={result.best_params}")
     typer.echo(f"  best_val_auc={auc_str}  best_val_mape={mape_str}  n_trials={result.n_trials}")
     typer.echo(f"  sweep_parquet={result.sweep_parquet_path}  checkpoint={result.checkpoint_path}")
+
+
+@forecasting_app.command("gnn-eval")
+def forecasting_gnn_eval(
+    config: str = typer.Option("v1", "--config", "-c"),
+) -> None:
+    """Touch the SEALED test set ONCE: score 4 baselines + frozen HGT for Gate G4 (V1-S14).
+
+    The frozen V1-S13 checkpoint is LOADED and scored, NEVER retrained — re-fitting
+    on the test session would void the OSF pre-registration. This command computes
+    whatever the data says; a NULL finding (HGT failing to clear the pre-registered
+    >5pp AUC margin and a significant paired-Brier test over ``no_graph``) is the
+    expected, honest outcome and is reported as such.
+    """
+    import json
+
+    import pandas as pd
+    from omegaconf import OmegaConf
+
+    from scifield.forecasting.gnn.loader import build_year_snapshots
+
+    cfg = _load_forecasting_config(config)
+
+    duckdb_path = Path(str(cfg.input.duckdb_path))
+    topics_parquet = Path(str(cfg.input.topics_parquet))
+    archetypes_parquet = Path(str(cfg.input.archetypes_parquet))
+    checkpoint_path = Path(str(cfg.output.checkpoint))
+    if not duckdb_path.exists():
+        typer.echo(f"papers DuckDB not found at {duckdb_path}; run `scifield harvest` first.")
+        raise typer.Exit(code=1)
+    if not topics_parquet.exists():
+        typer.echo(f"topics parquet not found at {topics_parquet}; run `scifield topics` first.")
+        raise typer.Exit(code=1)
+    if not archetypes_parquet.exists():
+        typer.echo(
+            f"archetypes parquet not found at {archetypes_parquet}; "
+            "run `scifield novelty archetypes` first."
+        )
+        raise typer.Exit(code=1)
+    if not checkpoint_path.exists():
+        typer.echo(
+            f"frozen HGT checkpoint not found at {checkpoint_path}; "
+            "run `scifield forecasting gnn-sweep` first."
+        )
+        raise typer.Exit(code=1)
+
+    # Build the SEALED test snapshots, then load the full train..test range. Test
+    # ORIGIN years are 2021-2022: the corpus ends 2026 and a 3-yr-ahead label needs
+    # origin <= 2023, so the config caps test at 2022 (the "2021-2025" elsewhere is
+    # the outcome window, not the origin range). build_year_snapshots caches
+    # snapshot_2021/2022.pt and runs assert_snapshot_no_leakage (the real guard).
+    test_lo, test_hi = int(cfg.split.test[0]), int(cfg.split.test[1])
+    build_year_snapshots(cfg, years=list(range(test_lo, test_hi + 1)))
+    snapshots = _load_gnn_snapshots(cfg, build=False, include_test=True)
+
+    # allow_test=True is the ONLY way the test slice exists — the S14 escape hatch.
+    from scifield.forecasting.data import materialize
+
+    features, _info = materialize(cfg, allow_test=True)
+
+    # Restore the frozen forecaster (weights + fitted pipeline); NEVER retrained.
+    from scifield.forecasting.train import load_forecaster
+
+    hgt = load_forecaster(checkpoint_path, snapshots)
+
+    from scifield.forecasting import evaluate
+
+    metrics = evaluate.test_metrics_table(features, cfg, hgt)
+    per_unit = evaluate.test_per_unit_scores(features, cfg, hgt)
+
+    calib_parts: list[pd.DataFrame] = []
+    for m in ("hgt", "no_graph"):
+        t = evaluate.calibration_table(per_unit[m]["emergence_score"], per_unit[m]["emergent"])
+        t.insert(0, "model", m)
+        calib_parts.append(t)
+    calib = pd.concat(calib_parts, ignore_index=True)
+
+    sens = evaluate.test_sensitivity_table(per_unit, model="hgt")
+    brier = evaluate.paired_brier_wilcoxon(per_unit, "hgt", "no_graph")
+    raw = evaluate.paired_score_wilcoxon(per_unit, "hgt", "no_graph")
+    verdict = evaluate.gate_g4_verdict(metrics, brier, comparator="no_graph")
+
+    # Flatten per_unit -> one tidy long block per model, in metrics row order.
+    _per_unit_cols = [
+        "topic_id",
+        "origin_year",
+        "emergence_score",
+        "emergent",
+        "emergent_additive",
+        "emergent_count_surge",
+        "share_forecast",
+        "forward_share",
+    ]
+    per_unit_blocks: list[pd.DataFrame] = []
+    for m in ("naive", "arima", "mlp", "no_graph", "hgt"):
+        block = pd.DataFrame({c: per_unit[m][c] for c in _per_unit_cols})
+        block.insert(0, "model", m)
+        per_unit_blocks.append(block)
+    per_unit_df = pd.concat(per_unit_blocks, ignore_index=True)
+
+    # Slice-count diagnostics (load-bearing for the sidecar config + the summary).
+    metrics_hgt = metrics.loc[metrics["model"] == "hgt"].iloc[0]
+    n_test = int(metrics_hgt["n_test"])
+    n_test_pos = int(metrics_hgt["n_test_pos"])
+
+    def _jnum(value: Any) -> float:
+        return float(value) if value is not None and not pd.isna(value) else float("nan")
+
+    wilcoxon_payload = {
+        "primary_brier": {k: _to_jsonable(v) for k, v in brier.items()},
+        "secondary_raw_score": {k: _to_jsonable(v) for k, v in raw.items()},
+        "verdict": {k: _to_jsonable(v) for k, v in verdict.items()},
+    }
+
+    # Write the 5 sealed-test artifacts (Gate G4).
+    metrics_path = Path(str(cfg.output.test_metrics_parquet))
+    per_unit_path = Path(str(cfg.output.test_per_unit_parquet))
+    calib_path = Path(str(cfg.output.test_calibration_parquet))
+    sens_path = Path(str(cfg.output.test_sensitivity_parquet))
+    wilcoxon_path = Path(str(cfg.output.test_wilcoxon_json))
+    for p in (metrics_path, per_unit_path, calib_path, sens_path, wilcoxon_path):
+        p.parent.mkdir(parents=True, exist_ok=True)
+
+    metrics.to_parquet(metrics_path, index=False)
+    per_unit_df.to_parquet(per_unit_path, index=False)
+    calib.to_parquet(calib_path, index=False)
+    sens.to_parquet(sens_path, index=False)
+    wilcoxon_path.write_text(json.dumps(wilcoxon_payload, indent=2, sort_keys=True))
+
+    # One record_run sidecar per artifact (the checkpoint is the hashed input).
+    prereg = cast(dict[str, Any], OmegaConf.to_container(cfg.preregistration, resolve=True))
+    split_block = cast(dict[str, Any], OmegaConf.to_container(cfg.split, resolve=True))
+    sidecar_config = _to_jsonable(
+        {
+            "preregistration": prereg,
+            "split": split_block,
+            "comparator": "no_graph",
+            "margin_pp": 5.0,
+            "alpha": 0.05,
+            "n_test": n_test,
+            "n_test_pos": n_test_pos,
+            "overall_pass": bool(verdict["overall_pass"]),
+            "h2_direction": str(verdict["h2_direction"]),
+            "delta_pp": _jnum(verdict["delta_pp"]),
+            "brier_pvalue": _jnum(brier["pvalue"]),
+        }
+    )
+    for artifact in (metrics_path, per_unit_path, calib_path, sens_path, wilcoxon_path):
+        record_run(
+            artifact_path=artifact,
+            inputs={"checkpoint": checkpoint_path},
+            config=sidecar_config,
+        )
+
+    # Summary: 5-row AUC/MAPE table, the ablation delta, the Brier test, the verdict.
+    typer.echo("gnn-eval done (SEALED test set scored ONCE):")
+    for _, row in metrics.iterrows():
+        auc = row["emergence_auc"]
+        auc_str = "nan" if pd.isna(auc) else f"{float(auc):.4f}"
+        mape = row["share_mape"]
+        mape_str = "nan" if pd.isna(mape) else f"{float(mape):.4f}"
+        typer.echo(f"  {row['model']:>9}  AUC={auc_str}  MAPE={mape_str}")
+    typer.echo(
+        f"  n_test={n_test} n_test_pos={n_test_pos}  "
+        f"ablation delta (hgt-no_graph AUC)={_jnum(verdict['delta_pp']):+.2f} pp"
+    )
+    bp = brier["pvalue"]
+    bp_str = "nan" if (bp is None or pd.isna(bp)) else f"{float(bp):.4g}"
+    typer.echo(f"  paired-Brier Wilcoxon: p={bp_str} direction={brier['direction']}")
+    typer.echo(
+        f"  GATE G4: overall_pass={bool(verdict['overall_pass'])} "
+        f"h2_direction={verdict['h2_direction']} "
+        f"recommendation={verdict['mechanical_recommendation']}"
+    )
+    typer.echo(
+        f"  artifacts: {metrics_path} {per_unit_path} {calib_path} {sens_path} {wilcoxon_path}"
+    )
 
 
 def main() -> None:

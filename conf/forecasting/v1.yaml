@@ -14,6 +14,12 @@ output:
   sweep_parquet: data/v1/forecasting_sweep.parquet
   checkpoint: models/v1/hgt_best.pt
   study_db: models/v1/hgt_study.db
+  # V1-S14 — sealed test-set evaluation artifacts (Gate G4).
+  test_metrics_parquet: data/v1/forecasting_test_metrics.parquet
+  test_per_unit_parquet: data/v1/forecasting_test_per_unit.parquet
+  test_calibration_parquet: data/v1/forecasting_test_calibration.parquet
+  test_sensitivity_parquet: data/v1/forecasting_test_sensitivity.parquet
+  test_wilcoxon_json: data/v1/forecasting_test_wilcoxon.json
 
 # Split denotes the forecast-ORIGIN year (feature cutoff). [lo, hi] inclusive.
 split:
