@@ -1992,6 +1992,211 @@ def forecasting_baselines(
     )
 
 
+def _load_gnn_snapshots(cfg: DictConfig, *, build: bool) -> dict[int, Any]:
+    """Return ``{origin_year -> HeteroData}`` for the train∪val origin years (V1-S13).
+
+    The HGT trainer and the Optuna sweep both fit on the SAME per-origin-year
+    ``HeteroData`` snapshots, so building (or loading) them is factored here. When
+    ``build`` is True we call :func:`build_year_snapshots`, which builds + asserts +
+    caches ``snapshot_{t}.pt`` under ``cfg.output.snapshots_dir`` and returns the
+    per-year ``meta`` dicts; we then load each cached ``.pt`` back into a live
+    ``HeteroData``. When ``build`` is False we expect the ``.pt`` files to already
+    exist for every train∪val year and load them directly (no DuckDB hit).
+    """
+    from scifield.forecasting.gnn.loader import build_year_snapshots, load_snapshot
+
+    if build:
+        metas = build_year_snapshots(cfg)
+        return {int(t): load_snapshot(m["path"]) for t, m in metas.items()}
+
+    snapshots_dir = Path(str(cfg.output.snapshots_dir))
+    train_lo = int(cfg.split.train[0])
+    val_hi = int(cfg.split.val[1])
+    return {
+        t: load_snapshot(snapshots_dir / f"snapshot_{t}.pt") for t in range(train_lo, val_hi + 1)
+    }
+
+
+@forecasting_app.command("gnn-snapshots")
+def forecasting_gnn_snapshots(
+    config: str = typer.Option("v1", "--config", "-c"),
+) -> None:
+    """Build + cache the leakage-safe per-origin-year HGT graph snapshots (V1-S13)."""
+    from scifield.forecasting.gnn.loader import build_year_snapshots
+
+    cfg = _load_forecasting_config(config)
+
+    duckdb_path = Path(str(cfg.input.duckdb_path))
+    topics_parquet = Path(str(cfg.input.topics_parquet))
+    if not duckdb_path.exists():
+        typer.echo(f"papers DuckDB not found at {duckdb_path}; run `scifield harvest` first.")
+        raise typer.Exit(code=1)
+    if not topics_parquet.exists():
+        typer.echo(f"topics parquet not found at {topics_parquet}; run `scifield topics` first.")
+        raise typer.Exit(code=1)
+
+    metas = build_year_snapshots(cfg)
+
+    total_artifacts = sum(int(m["n_future_citation_artifacts"]) for m in metas.values())
+    typer.echo(f"snapshots done: {len(metas)} years -> {cfg.output.snapshots_dir}")
+    for t in sorted(metas):
+        meta = metas[t]
+        nodes = "/".join(str(int(meta["n_nodes"][k])) for k in ("Paper", "Topic"))
+        n_edges = sum(int(v) for v in meta["n_edges"].values())
+        typer.echo(
+            f"  {int(t)}  Paper/Topic={nodes}  n_edges={n_edges}  "
+            f"future_cite_artifacts={int(meta['n_future_citation_artifacts'])}"
+        )
+    typer.echo(f"  total L5 future-citation-artifacts (diagnostic, not a leak)={total_artifacts}")
+
+
+@forecasting_app.command("gnn-train")
+def forecasting_gnn_train(
+    config: str = typer.Option("v1", "--config", "-c"),
+    resume: bool = typer.Option(False, "--resume/--no-resume"),
+    epochs: int | None = typer.Option(None, "--epochs"),
+) -> None:
+    """Train one HGT config to convergence with crash-safe, resumable checkpoints (V1-S13)."""
+    import hashlib
+    import json
+
+    import pandas as pd
+
+    from scifield.forecasting.train import train_hgt
+
+    cfg = _load_forecasting_config(config)
+
+    features_parquet = Path(str(cfg.output.features_parquet))
+    if not features_parquet.exists():
+        typer.echo(
+            f"forecasting features parquet not found at {features_parquet}; "
+            "run `scifield forecasting features` first."
+        )
+        raise typer.Exit(code=1)
+
+    df = pd.read_parquet(features_parquet)
+    labels = df[["emergent", "forward_share"]]
+
+    snapshots = _load_gnn_snapshots(cfg, build=True)
+
+    params: dict[str, Any] = {
+        "conv_type": str(cfg.gnn.conv_type),
+        "hidden": int(cfg.gnn.hidden),
+        "n_layers": int(cfg.gnn.n_layers),
+        "heads": int(cfg.gnn.heads),
+        "dropout": float(cfg.gnn.dropout),
+        "lr": float(cfg.gnn.lr),
+        "seed": int(cfg.gnn.seed),
+        "device": str(cfg.gnn.device),
+        "pos_weight": (
+            str(cfg.gnn.pos_weight)
+            if isinstance(cfg.gnn.pos_weight, str)
+            else float(cfg.gnn.pos_weight)
+        ),
+    }
+    max_epochs = int(epochs) if epochs is not None else int(cfg.gnn.epochs)
+    patience = int(cfg.gnn.patience)
+
+    # TRAIN-specific checkpoint paths so the sweep's hgt_best.pt is never clobbered.
+    models_dir = Path(str(cfg.output.checkpoint)).parent
+    models_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = models_dir / "hgt_latest.pt"
+    best_path = models_dir / "hgt_train_best.pt"
+
+    gnn_block = cast(dict[str, Any], OmegaConf.to_container(cfg.gnn, resolve=True))
+    cfg_hash = hashlib.sha256(
+        json.dumps(_to_jsonable(gnn_block), sort_keys=True).encode()
+    ).hexdigest()[:12]
+
+    result = train_hgt(
+        features=df,
+        labels=labels,
+        snapshots=snapshots,
+        params=params,
+        checkpoint_path=checkpoint_path,
+        best_path=best_path,
+        resume=resume,
+        patience=patience,
+        max_epochs=max_epochs,
+        cfg_hash=cfg_hash,
+        val_eval=True,
+    )
+
+    prereg = cast(dict[str, Any], OmegaConf.to_container(cfg.preregistration, resolve=True))
+    record_run(
+        artifact_path=best_path,
+        inputs={"forecasting_features": features_parquet},
+        config=_to_jsonable(
+            {
+                "preregistration": prereg,
+                "gnn": gnn_block,
+                "best_val_auc": result.best_val_auc,
+                "best_epoch": result.best_epoch,
+                "last_epoch": result.last_epoch,
+                "resumed": resume,
+            }
+        ),
+    )
+
+    import math
+
+    auc = result.best_val_auc
+    auc_str = "nan" if (auc is None or math.isnan(auc)) else f"{float(auc):.4f}"
+    typer.echo(
+        f"gnn-train done: best_val_auc={auc_str} best_epoch={result.best_epoch} "
+        f"last_epoch={result.last_epoch} resumed={resume}  best={best_path}"
+    )
+
+
+@forecasting_app.command("gnn-sweep")
+def forecasting_gnn_sweep(
+    config: str = typer.Option("v1", "--config", "-c"),
+    n_trials: int | None = typer.Option(None, "--n-trials"),
+) -> None:
+    """Run/resume the HGT Optuna sweep, retrain the winner, and persist it (V1-S13)."""
+    import math
+
+    import pandas as pd
+
+    from scifield.forecasting.sweep import run_sweep
+
+    cfg = _load_forecasting_config(config)
+
+    features_parquet = Path(str(cfg.output.features_parquet))
+    if not features_parquet.exists():
+        typer.echo(
+            f"forecasting features parquet not found at {features_parquet}; "
+            "run `scifield forecasting features` first."
+        )
+        raise typer.Exit(code=1)
+
+    df = pd.read_parquet(features_parquet)
+    labels = df[["emergent", "forward_share"]]
+
+    snapshots = _load_gnn_snapshots(cfg, build=True)
+
+    # run_sweep writes the sweep parquet + hgt_best.pt + BOTH record_run sidecars
+    # itself (using cfg.output.{sweep_parquet,checkpoint,study_db}); do NOT
+    # double-write any of them here.
+    result = run_sweep(
+        features=df,
+        labels=labels,
+        snapshots=snapshots,
+        cfg=cfg,
+        n_trials=n_trials,
+        inputs={"forecasting_features": features_parquet},
+    )
+
+    auc = result.best_val_auc
+    auc_str = "nan" if (auc is None or math.isnan(auc)) else f"{float(auc):.4f}"
+    mape = result.best_val_mape
+    mape_str = "nan" if (mape is None or math.isnan(mape)) else f"{float(mape):.4f}"
+    typer.echo("gnn-sweep done:")
+    typer.echo(f"  best_params={result.best_params}")
+    typer.echo(f"  best_val_auc={auc_str}  best_val_mape={mape_str}  n_trials={result.n_trials}")
+    typer.echo(f"  sweep_parquet={result.sweep_parquet_path}  checkpoint={result.checkpoint_path}")
+
+
 def main() -> None:
     app()
 

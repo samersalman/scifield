@@ -537,7 +537,30 @@ Pass = \|ρ\| < 0.4 AND ≥1 surprising-to-expert finding in the archetype distr
 
 ---
 
-### V1-S13 — HGT/TGN architecture, training loop, Brev spot hyperparameter sweep
+### V1-S13 ✓ — HGT/TGN architecture, training loop, Brev spot hyperparameter sweep
+
+> **Status: ✓ complete — HGT built and swept locally on Mac CPU (overnight), $0 spend, committed 2026-06-04.**
+> HGT architecture: per-type input projections → L×HGTConv layers → 2 heads (emergence BCE +
+> log-share MSE). Leakage-safe per-origin-year HeteroData snapshots with `assert_snapshot_no_leakage`
+> (L1–L5 checks). Checkpoint-resume training loop + Optuna TPE+MedianPruner SQLite-resumable sweep
+> (committed config nominal 40 trials × 200 epochs; the local overnight run used a reduced budget —
+> 20 trials submitted → 5 completed + 15 pruned, 100-epoch cap, ~8.2 h — because a full-graph HGT
+> epoch costs ~46–114 s single-threaded on this CPU). Ran locally on Mac CPU
+> (`torch.set_num_threads(1)`, Darwin libomp guard + bit-reproducibility), $0;
+> `scripts/brev_train.sh` (A100-spot template) is committed and `bash -n`-validated but never
+> executed — staged for v2-corpus scaling, per the V1-S05 pattern for `scripts/brev_embed.sh`.
+> Deliverables: `gnn/loader.py`, `gnn/hgt.py`, `forecasting/train.py`, `forecasting/sweep.py`,
+> 3 CLI subcommands (`scifield forecasting gnn-snapshots/gnn-train/gnn-sweep`), sweep parquet +
+> best checkpoint (gitignored artifacts) with OSF-DOI sidecars referencing
+> [10.17605/OSF.IO/XP94F](https://doi.org/10.17605/OSF.IO/XP94F).
+> **Result (model selection only):** best HGT validation emergence AUC = **0.737** (val MAPE 0.553),
+> config `conv_type=hgt, hidden=32, n_layers=2, heads=1, dropout=0.38, lr=2.9e-3`; `hgt_best.pt` holds
+> the val-selected (epoch-85) weights. Test-set eval + the Gate-G4 >5pp verdict are V1-S14.
+>
+> **Deferred to V1-S14 (anti-drift):** test-set (2021–2022) evaluation, baseline head-to-head
+> comparison, Wilcoxon signed-rank, and the >5pp Gate-G4 verdict. The HGT may or may not beat
+> `no_graph` (val AUC 0.701) on validation — that is fine; the gate verdict is V1-S14.
+> **V1-S14 (forecasting evaluation + Gate G4) is unblocked.**
 
 **Phase:** 5 (Forecasting) | **Plan ref:** §5 Phase 5 | **Effort:** ~1 week elapsed (most is compute wait) | **Depends on:** V1-S12 | **Brev:** A100 80GB, 30–60 GPU-hours, ~$50–120
 

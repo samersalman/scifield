@@ -38,6 +38,8 @@ dependencies = [
     "kuzu>=0.6",
     "cdindex>=1.0",
     "statsmodels>=0.14",
+    "torch-geometric>=2.5",
+    "optuna>=3.6",
 ]
 
 [project.scripts]

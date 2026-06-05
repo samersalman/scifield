@@ -9,6 +9,11 @@ input:
 output:
   features_parquet: data/v1/forecasting_features.parquet
   metrics_parquet: data/v1/forecasting_baselines.parquet
+  # V1-S13 GNN outputs (gitignored artifacts).
+  snapshots_dir: data/v1/gnn_snapshots
+  sweep_parquet: data/v1/forecasting_sweep.parquet
+  checkpoint: models/v1/hgt_best.pt
+  study_db: models/v1/hgt_study.db
 
 # Split denotes the forecast-ORIGIN year (feature cutoff). [lo, hi] inclusive.
 split:
@@ -51,6 +56,31 @@ baselines:
     lr: 0.01
     batch_size: 256
     seed: 1729
+
+# V1-S13 — HGT (heterogeneous graph transformer) over per-origin-year snapshots.
+# Architecture/metrics/split are pre-registered (OSF DOI 10.17605/OSF.IO/XP94F);
+# hardware is NOT constrained, so this runs locally on Mac CPU ($0). The
+# n_layers=0 / conv_type ablation is what keeps Gate G4's >5pp test (V1-S14) honest.
+gnn:
+  conv_type: hgt          # hgt | sage (sage = pure-Python HeteroConv(SAGEConv) fallback)
+  hidden: 64
+  n_layers: 2
+  heads: 2
+  dropout: 0.2
+  lr: 0.001
+  epochs: 200
+  patience: 25
+  seed: 1729
+  device: cpu             # cpu | mps
+  pos_weight: auto        # auto = n_neg/n_pos from TRAIN
+  sweep:
+    n_trials: 40
+    search:
+      lr: [1.0e-4, 1.0e-2]
+      hidden: [32, 64, 128]
+      n_layers: [1, 2, 3]
+      dropout: [0.0, 0.5]
+      heads: [1, 2, 4]
 
 preregistration:
   osf_url: https://doi.org/10.17605/OSF.IO/XP94F

@@ -137,3 +137,50 @@ surfaced and aborted the run; see G1 retune-results append) plus phase 2
 widen sweep (9 configs + final fit + hierarchy = 17.0 min) totalled
 ~23.5 min wall on the same 14-thread Mac host. No Brev launch this
 session. Credit balance unchanged.
+
+---
+
+## V1-S13 (2026-06-03/04): no Brev needed; ran locally on Mac CPU (overnight)
+
+The HGT GNN training + Optuna hyperparameter sweep ran on the **Mac CPU**,
+`torch.set_num_threads(1)` (the Darwin libomp single-thread guard — also
+required for the bit-reproducibility deliverable, since intra-op parallelism
+would make CPU reductions non-deterministic), $0 spend. No Brev instance
+launched.
+
+**Compute reality vs the briefing.** The pre-registration constrains
+architecture/metrics/split, not hardware. The dataset is tiny (~1,298 train
+/ 208 val rows; 23 yearly HeteroData snapshots, largest ~96k nodes /
+~1.44M edges) — but a full-graph HGT forward+backward over all ~20
+train-year snapshots costs **~46 s/epoch (hidden 64) to ~114 s/epoch
+(hidden 128)** single-threaded, so the *nominal* 40-trial × 200-epoch sweep
+is a multi-**day** job on this CPU, not the minutes the plan first assumed.
+Settled with Samer: run a reduced **overnight** budget locally at $0 rather
+than spend on the briefed A100 for a one-off V1 sweep. (One real-data fix
+en route: the joint backward over ~20 large graphs OOM-killed the box, so
+training uses gradient accumulation — per-snapshot backward, one optimizer
+step/epoch — which is mathematically identical but bounds peak memory to a
+single snapshot.)
+
+**Local run (overnight, $0):** Optuna TPE + MedianPruner, **20 trials
+submitted → 5 completed + 15 pruned**, 100-epoch cap, patience 25,
+**~8.2 h wall** (492 min) on the 14-thread Mac host (single-thread torch).
+The committed `conf/forecasting/v1.yaml` keeps the *nominal* `n_trials=40 /
+epochs=200` (the budget the staged A100 script would run); only the local
+execution used the reduced budget.
+
+**Result (model selection only):** best HGT **validation emergence AUC =
+0.737** (val MAPE 0.553), config `conv_type=hgt, hidden=32, n_layers=2,
+heads=1, dropout=0.38, lr=2.9e-3`; `hgt_best.pt` holds those val-selected
+weights (epoch 85). For reference the V1-S12 `no_graph` baseline is val AUC
+0.701. **This is the validation gap used for model selection ONLY — the
+test-set evaluation, the baseline head-to-head, and the Gate-G4 ">5 pp"
+verdict are pre-registered for V1-S14 on the SEALED 2021–2022 test set and
+are NOT decided here.**
+
+`scripts/brev_train.sh` (A100-spot template) is committed and
+`bash -n`-validated but **never executed** — staged for a future v2-corpus
+scaling session (where the full 40×200 budget actually matters), exactly
+like `scripts/brev_embed.sh` was for V1-S05.
+
+**Credit balance:** unchanged; no Brev minutes spent during V1-S13.
