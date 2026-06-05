@@ -593,7 +593,7 @@ Pass = \|ρ\| < 0.4 AND ≥1 surprising-to-expert finding in the archetype distr
 
 ### V1-S14 ✓ — Forecasting evaluation, calibration, Wilcoxon, Gate G4 report
 
-> **Status: ✓ complete — sealed test set scored ONCE; $0, CPU-only; committed 2026-06-05 (gate report UNSIGNED, awaiting Samer's decision).**
+> **Status: ✓ complete — sealed test set scored ONCE; $0, CPU-only; committed 2026-06-05; Gate G4 signed NULL by Samer 2026-06-05.**
 > Result: **NULL FINDING.** On the sealed test (forecast-origin years 2021–2022; n_test=138, 13 positives) HGT
 > emergence AUC = **0.781** vs. the val-selected best baseline `no_graph` **0.804** — Δ **−2.34pp** (H1 FAIL: not
 > just short of the +5pp bar, but on the wrong side of zero). The pre-registered paired per-row Brier-loss
@@ -607,8 +607,8 @@ Pass = \|ρ\| < 0.4 AND ≥1 surprising-to-expert finding in the archetype distr
 > The frozen `models/v1/hgt_best.pt` is **byte-unchanged** (no retraining; checksum-verified); the 5 test
 > artifacts are gitignored (regenerable via `gnn-eval`) with OSF-DOI
 > [10.17605/OSF.IO/XP94F](https://doi.org/10.17605/OSF.IO/XP94F) sidecars.
-> **STOP — awaits Samer's human Gate G4 decision** (PASS / NULL / DROP) in `docs/gates/G4_forecasting.md`;
-> V1-S15 is gated on it.
+> **Gate G4 RESOLVED = NULL FINDING** (signed by Samer 2026-06-05) in `docs/gates/G4_forecasting.md`; F3 stands as
+> a characterized null. **V1-S15 is unblocked.** Optional re-tuned retry logged as V1-S14-2 (needs a fresh holdout).
 
 **Phase:** 5 (Forecasting) | **Plan ref:** §5 Phase 5 + Gate after Phase 5 | **Effort:** ~1 day | **Depends on:** V1-S13
 
@@ -638,7 +638,24 @@ Pass = \|ρ\| < 0.4 AND ≥1 surprising-to-expert finding in the archetype distr
 
 Pass = HGT > best baseline by >5 pp emergence AUC at 3yr horizon, Wilcoxon p<0.05. Fail = F3 is framed as a null finding ("graph structure does not add forecasting value beyond temporal features") — itself publishable per plan §6 row 4. Do not retrain on test data, do not p-hack, do not amend the pre-registration except via a clearly-logged deviation note.
 
-> **Computed (V1-S14, 2026-06-05): mechanical verdict = NULL FINDING** — HGT −2.34pp vs. `no_graph` (H1 FAIL); paired Brier-loss Wilcoxon p=2.6e-11 but favoring the baseline (H2 does not support F3); `overall_pass = False`. The single sealed-test touch is done and the frozen checkpoint is byte-unchanged. **Awaiting Samer's human sign-off** in `docs/gates/G4_forecasting.md` before V1-S15.
+> **RESOLVED (V1-S14, signed by Samer 2026-06-05): Gate G4 = NULL FINDING** — HGT −2.34pp vs. `no_graph` (H1 FAIL); paired Brier-loss Wilcoxon p=2.6e-11 favoring the baseline (H2 does not support F3); `overall_pass = False`. The single sealed-test touch is done; the frozen checkpoint is byte-unchanged. **V1-S15 unblocked.** Optional re-tuned retry → V1-S14-2 (needs a fresh holdout; must not re-score the 2021–2022 test as confirmatory).
+
+---
+
+### V1-S14-2 (deferred, optional) — HGT calibration retry (graph-vs-baseline, take 2)
+
+> **Status: NOT STARTED — optional follow-up to the V1-S14 null. NOT blocking V1-S15. Requires its OWN pre-registration; it must NOT re-score the now-used 2021–2022 sealed test as confirmatory evidence (that would p-hack the burned holdout).**
+
+**Motivation.** V1-S14 Gate G4 = null: the HGT lost to `no_graph` mainly via **miscalibration / over-prediction** (paired Brier favors_baseline, p=2.6e-11) while still ranking decently (test AUC 0.781 vs 0.804). The graph signal may not be zero — a better-calibrated HGT could change the verdict. This is a NEW hypothesis, not a rescue of G4.
+
+**Candidate adjustments (each targets the over-prediction mechanism, not AUC-chasing).**
+- **`pos_weight`** — replace `auto` (≈ n_neg/n_pos) with a tuned / √-dampened weight, or swap weighted-BCE for **focal loss**; `auto` heavily upweights the ~4–9% positives and is the prime over-prediction suspect.
+- **Model-selection metric** — select the checkpoint on val **Brier** (or AUC + calibration), not val AUC alone; the gate scores calibrated forecasts.
+- **Post-hoc calibration** — Platt / temperature / isotonic scaling fit on a held-out *calibration* slice carved from train/val (never the test).
+- **Regularization** — higher dropout / weight-decay / fewer layers / earlier stopping, for the 2017→2021 graph-growth distribution gap.
+- **TGN** — the pre-registered "only if HGT badly underperforms" fallback; this miss arguably qualifies.
+
+**Integrity constraint.** Confirmatory re-evaluation needs a **fresh** sealed holdout (e.g. a 2023 origin year once the corpus's 3-yr outcome window supports it, or nested temporal CV) OR an explicit "exploratory / hypothesis-generating, not confirmatory" label. The 2021–2022 origin-year test is spent for confirmatory use.
 
 ---
 

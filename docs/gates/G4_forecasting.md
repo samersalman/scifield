@@ -109,11 +109,11 @@ The forecasting map / figure labels the test span "**2021–2025**"; the verdict
 The objective pre-registered criteria are **not** met: H1 fails outright (HGT −2.34pp *below* the graph-free baseline, far from the +5.0pp bar), and H2's paired significance runs **against** HGT (significantly worse-calibrated, `p = 2.63e-11`, direction = favors_baseline). `overall_pass = H1 ∧ H2 = False`. Mechanically this is a **NULL FINDING**. A clean, well-characterized null is publishable (plan §6): F3 stands as "**graph structure did not improve 3-yr emergence forecasting over a graph-free baseline on the sealed test set**," with a characterized mechanism (HGT over-prediction / miscalibration, §4). The val→test ranking shifted on a small, high-variance test set (n_test = 138, 13 positives; no_graph 0.701→0.804, hgt 0.737→0.781), but even granting that variance HGT does not clear — indeed sits on the wrong side of — the bar; this is a clean FAIL/NULL, not a near-miss to be re-litigated. The final F3 disposition (and any PASS/NULL/DROP architectural call) is **Samer's**.
 
 - [ ] PASS (F3 success)
-- [ ] NULL FINDING (F3 reported as null — graph adds no test-set lift)
+- [x] NULL FINDING (F3 reported as null — graph adds no test-set lift)
 - [ ] DROP F3
 
-**Decision:** _______
+**Decision: NULL FINDING.** F3 is reported as a characterized null — on the sealed test the citation-graph (HGT) adds no forecasting value beyond the temporal/structural node-features, and is significantly worse-calibrated. No retraining or re-tuning of this gate (PR2 §9). A re-tuned follow-up (V1-S14-2) is logged separately and **requires a fresh pre-registration / holdout** — it may not re-score the now-used 2021–2022 origin-year test as confirmatory evidence.
 
-Signed: ______________  Date: __________
+Signed: _Samer G. Salman_  Date: _2026-06-05_
 
-Per the Session-Objectives map, V1-S15 is gated on this human decision.
+Gate G4 is resolved (NULL FINDING); per the Session-Objectives map, **V1-S15 is unblocked.**
