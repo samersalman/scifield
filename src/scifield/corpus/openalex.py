@@ -230,8 +230,61 @@ class OpenAlexClient:
 # ---------------------------------------------------------------------------
 
 
+def _parse_grants(work: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract the OpenAlex ``grants`` array (funder / award identifiers).
+
+    Each OpenAlex grant carries a ``funder`` id, a ``funder_display_name``, and an
+    optional ``award_id``. We project these into a flat list of dicts so a future
+    funding-origin analysis (V2-S06) can attribute novelty to funders once the
+    column is wired through the store and re-harvested.
+
+    Parameters
+    ----------
+    work :
+        A raw OpenAlex work JSON object.
+
+    Returns
+    -------
+    list of dict
+        One dict per grant with keys ``funder`` (id, prefix-stripped),
+        ``funder_display_name``, and ``award_id`` (empty string when absent).
+        Empty list when the work has no ``grants`` (the common case for
+        clinical-journal works lacking structured funding metadata).
+
+    Notes
+    -----
+    This key is **additive**: it is NOT (yet) part of ``OPENALEX_WORKS_SCHEMA``, so
+    ``pyarrow.Table.from_pylist(rows, schema=...)`` silently drops it on the live
+    store-write path. Persisting funding origin requires wiring the column through
+    :mod:`scifield.corpus.enrich_store` AND a targeted OpenAlex re-pull — both
+    deferred per the V2-S06 coverage note ($0 session, no re-harvest).
+    """
+    grants_raw = work.get("grants") or []
+    out: list[dict[str, Any]] = []
+    for g in grants_raw:
+        if not isinstance(g, dict):
+            continue
+        out.append(
+            {
+                "funder": _strip_prefix(g.get("funder"), _OPENALEX_WORK_PREFIX),
+                "funder_display_name": (g.get("funder_display_name") or "").strip(),
+                "award_id": (g.get("award_id") or "").strip(),
+            }
+        )
+    return out
+
+
 def parse_openalex_work(pmid: str, work: dict[str, Any]) -> dict[str, Any]:
-    """Project one OpenAlex work into an ``OPENALEX_WORKS`` row dict."""
+    """Project one OpenAlex work into an ``OPENALEX_WORKS`` row dict.
+
+    Notes
+    -----
+    The returned dict also carries an **additive** ``grants`` key (funder / award
+    ids; see :func:`_parse_grants`). It is not part of ``OPENALEX_WORKS_SCHEMA``, so
+    the store-write path (``from_pylist`` with an explicit schema) silently ignores
+    it — backward-compatible by construction. Persisting funding origin is deferred
+    pending a schema change + re-harvest (V2-S06 coverage note).
+    """
     open_access = work.get("open_access") or {}
     concepts_raw = work.get("concepts") or []
     concepts_sorted = sorted(
@@ -267,6 +320,7 @@ def parse_openalex_work(pmid: str, work: dict[str, Any]) -> dict[str, Any]:
         "concepts": concepts,
         "publication_year": publication_year,
         "publication_date": (work.get("publication_date") or "").strip(),
+        "grants": _parse_grants(work),
         "fetched_at": _now_iso(),
     }
 

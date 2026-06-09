@@ -1,0 +1,40 @@
+{
+  "config": {
+    "artifact": "map_v0/index.html",
+    "cascade_verdict": "S04 REAL-with-qualification (S1/Null-1 PASS both grains)",
+    "deferred": "funding (grants parser-only) + citation-intent (table empty)",
+    "grain": "leaf",
+    "left_censoring_1995": "\u2248139/149 leaf topics originate at the 1995 panel start",
+    "panel_conditional": "origins are first-in-10-journal-panel, not first in world",
+    "renderer": "plotly static HTML (CDN script), no server (streamlit/dash absent)",
+    "roles_verdict": "S05 jackknife-stable (role_rank_correlation 0.945/0.962)",
+    "sections": [
+      "a. Topic landscape",
+      "b. Cascade flows (lag heatmap + seeding network + adoption curve)",
+      "c. Journal roles (component bars + citational velocity)",
+      "d. Novelty origins (sector near-null + geography + recombinant topics)"
+    ],
+    "sector_verdict": "near-null (company mid-pack); geography most differentiated",
+    "task": "V2-S07"
+  },
+  "config_hash": "387c9af6baf6f3d73f6a0b8b8504b1674315abdb043bed317d61a11708daa696",
+  "git_dirty": true,
+  "git_sha": "f1f10276ca28b4c4f44980790b97672cb88e33c4",
+  "input_hashes": {
+    "diffusion_curves": "b150c9636b1c32b1f06c659b522bdd2c38c3218b8e8d93e803e8dc7dfe60a1fd",
+    "geo_novelty": "daccbd309bb7bece382fb8b5e71f8e7ddef7dc98c98c8de73decc070b1708b66",
+    "lag_matrix": "63f0c44b561229bd5a6abbaa0f20e97891100a6ce0b6dd381dd8d9d4f74f5f82",
+    "origin_attribution": "63f902471f94d40ea6a4a425cbcb534826636a7e230083f680bf0cd55f71038f",
+    "recombination_by_topic": "28a10fd5c4aa9afca26bd3f25cf259c6b0be43d9b5a9ed89871e8f09f03fe87f",
+    "role_scores": "061651e56ceef7fb3d2c1458e839d686869b5195202086d6857444c0728f435c",
+    "sector_novelty": "eb7637e529bd2f74d7504c4661d9712e9ec60e229e97f8c85e1f288f146dd6a7",
+    "topic_hierarchy": "64426d2252872faaa0bc2f51b2c2fc15a3e28ef0af7d5bdf08d3080f8c5d985d",
+    "velocity": "6614edffa5d20ae1fec300b4ef14a279bdabadedc21d0545c1c6540962a8b48c"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-09T21:16:25.560702+00:00"
+}
