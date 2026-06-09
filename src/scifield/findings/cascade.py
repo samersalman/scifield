@@ -106,11 +106,14 @@ __all__ = [
     "classify_direction",
     "cross_correlation",
     "decide_f1",
+    "engle_granger_ecm_pair",
     "evidence_tier",
     "granger_pair",
     "panel_granger",
+    "panel_toda_yamamoto",
     "prepare_series",
     "qualifying_topics",
+    "toda_yamamoto_pair",
 ]
 
 #: Ordinal evidence-tier map (higher = stronger study design). ``review`` and
@@ -867,3 +870,367 @@ def decide_f1(
         "panel_p_quality_lags": p_v_to_q,
         "frac_threshold": float(holds_frac),
     }
+
+
+# --------------------------------------------------------------------------- #
+# PR3D levels diagnostic — Toda–Yamamoto + Engle–Granger ECM + level panel
+# (additive; ``docs/preregistrations/PR3D_levels_diagnostic.md``). These operate
+# on the *undifferenced* LEVEL series and never reimplement the reused PR3 logic.
+# --------------------------------------------------------------------------- #
+
+
+def toda_yamamoto_pair(
+    quality,
+    volume,
+    *,
+    k: int = 3,
+    d_max: int = 1,
+):
+    """Bidirectional Toda–Yamamoto (1995) Granger test on the LEVEL series.
+
+    Pure. Unlike :func:`granger_pair` (which first-differences internally), this
+    consumes the **undifferenced LEVEL** series and fits an *augmented* VAR of
+    order ``p = k + d_max`` on the 2-column level matrix ``[quality, volume]``
+    with ``trend="c"``. The Toda–Yamamoto restriction is a Wald test that ONLY
+    the first ``k`` cross-lag coefficients (the *cause* variable's lags ``1..k``
+    in the *effect* variable's equation) are jointly zero; the extra ``d_max``
+    augmenting lag(s) are estimated but **excluded from the restriction**, so the
+    Wald statistic keeps its asymptotic χ² distribution even on integrated /
+    cointegrated levels (no unit-root pre-test required).
+
+    The Wald is built **by hand** from the fitted VAR coefficient vector and its
+    covariance — NOT via ``VARResults.test_causality`` (which restricts *all*
+    lags and so omits the TY lag-exclusion). With ``β = params.flatten('C')`` and
+    ``Σ = cov_params()``, ``W = (Rβ)ᵀ (R Σ Rᵀ)⁻¹ (Rβ)`` and
+    ``p = scipy.stats.chi2.sf(W, df=k)`` (df = ``k``, the augmenting lag is NOT
+    counted). Wrapped in try/except: a degenerate / singular / too-short topic
+    returns ``NaN`` in both directions (recorded, treated as non-significant).
+
+    Parameters
+    ----------
+    quality, volume :
+        Equal-length aligned **LEVEL** series (typically :func:`prepare_series`
+        outputs — passed WITHOUT differencing).
+    k :
+        Number of restricted (original) lags. Pre-registered default ``3``
+        (mirrors PR3's fixed Granger lag order).
+    d_max :
+        Maximal suspected integration order = number of augmenting lags estimated
+        but excluded from the restriction. Pre-registered default ``1``.
+
+    Returns
+    -------
+    tuple[float, float]
+        ``(p_q_to_v, p_v_to_q)``:
+
+        * ``p_q_to_v`` — Wald p that ``quality`` Granger-causes ``volume`` in the
+          levels ("quality leads"); restricts ``quality``'s first ``k`` lags in
+          the ``volume`` equation.
+        * ``p_v_to_q`` — Wald p that ``volume`` Granger-causes ``quality``
+          ("volume leads / quality lags"); restricts ``volume``'s first ``k``
+          lags in the ``quality`` equation.
+
+        Either is ``NaN`` when ``obs ≤ 2p + 2`` (≤ 10 rows at ``p = 4``) or the
+        VAR / restriction covariance is singular. This matches PR3 §2.1 / §6.2
+        sign convention (negative CCF lag = quality leads) and the NaN-on-failure
+        discipline of :func:`granger_pair`.
+
+    Notes
+    -----
+    The statsmodels ``VARResults`` layout is fixed and verified empirically:
+    ``params`` is ``(1 + neqs*p, neqs)`` with rows ordered
+    ``[const, L1.y1, L1.y2, L2.y1, L2.y2, …]`` (var-interleaved within each lag
+    block) and columns = equations; ``cov_params()`` is indexed by
+    ``flat = row*neqs + eq`` (a C-order flatten of ``params``). The by-hand Wald
+    reproduces ``test_causality`` exactly when all lags are restricted.
+    """
+    import numpy as np
+
+    q = np.asarray(quality, dtype="float64")
+    v = np.asarray(volume, dtype="float64")
+    # quality = column 0 (y1), volume = column 1 (y2).
+    p_q_to_v = _ty_one(cause=q, effect=v, cause_col=0, effect_col=1, k=k, d_max=d_max)
+    p_v_to_q = _ty_one(cause=v, effect=q, cause_col=1, effect_col=0, k=k, d_max=d_max)
+    return p_q_to_v, p_v_to_q
+
+
+def _ty_one(*, cause, effect, cause_col: int, effect_col: int, k: int, d_max: int) -> float:
+    """One-directional Toda–Yamamoto Wald p-value (cause → effect); ``NaN`` on failure.
+
+    Fits the augmented VAR(``p = k + d_max``, ``trend="c"``) on ``[y1, y2]`` where
+    column ``cause_col`` is the cause and ``effect_col`` the effect, then Wald-
+    tests the cause's first ``k`` lag coefficients in the effect equation against
+    zero. ``df = k`` (the ``d_max`` augmenting lag is excluded).
+    """
+    import warnings
+
+    import numpy as np
+
+    cause = np.asarray(cause, dtype="float64")
+    effect = np.asarray(effect, dtype="float64")
+    n = min(cause.size, effect.size)
+    cause = cause[:n]
+    effect = effect[:n]
+
+    p = k + d_max
+    # Need enough rows to fit ``p`` lags with residual df left over (mirrors the
+    # ``granger_pair`` ``2*lag + 2`` rule, here with the augmented order ``p``).
+    if n <= 2 * p + 2:
+        return float("nan")
+    if not (np.all(np.isfinite(cause)) and np.all(np.isfinite(effect))):
+        return float("nan")
+    if np.std(cause) == 0.0 or np.std(effect) == 0.0:
+        return float("nan")
+
+    # Reassemble the 2-column system in canonical [y1=col0, y2=col1] order.
+    cols = [None, None]
+    cols[cause_col] = cause
+    cols[effect_col] = effect
+    y = np.column_stack(cols)
+
+    from scipy.stats import chi2
+    from statsmodels.tsa.api import VAR
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            res = VAR(y).fit(p, trend="c")
+        neqs = res.neqs
+        params = np.asarray(res.params, dtype="float64")  # (1 + neqs*p, neqs)
+        beta = params.flatten(order="C")  # cov index = row*neqs + eq
+        cov = np.asarray(res.cov_params(), dtype="float64")
+
+        # Rows of the cause's lags 1..k (var-interleaved within each lag block):
+        #   row(const)=0; row(lag L, var c) = 1 + (L-1)*neqs + c.
+        rows = [1 + (lag - 1) * neqs + cause_col for lag in range(1, k + 1)]
+        flat_idx = [r * neqs + effect_col for r in rows]
+
+        restriction = np.zeros((len(flat_idx), beta.size), dtype="float64")
+        for i, j in enumerate(flat_idx):
+            restriction[i, j] = 1.0
+
+        rb = restriction @ beta
+        mid = restriction @ cov @ restriction.T
+        wald = float(rb.T @ np.linalg.solve(mid, rb))
+        pval = float(chi2.sf(wald, df=k))
+    except Exception:
+        return float("nan")
+    if not np.isfinite(pval):
+        return float("nan")
+    return pval
+
+
+def engle_granger_ecm_pair(quality, volume) -> dict:
+    """Engle–Granger cointegration + Δvolume error-correction (ROBUSTNESS only).
+
+    Pure. **Robustness / informational only** — it characterizes whether a
+    long-run *level* relationship exists between ``quality`` and ``volume`` and
+    how the system corrects toward it, but (per PR3D §3.3 / §9) it **cannot flip**
+    the HOLD/NULL verdict (same non-gating status as PR3's RCT-share rerun).
+
+    Step 1 — cointegration: ``coint_pvalue`` from
+    ``statsmodels.tsa.stattools.coint(quality, volume)``; ``cointegrated`` is
+    ``True`` iff ``coint_pvalue < 0.05``.
+    Step 2 — error-correction (only if cointegrated): regress ``volume`` on
+    ``quality`` (+const) to obtain the long-run residual ``z``, then fit the
+    Δvolume equation ``Δvolume_t = α + λ·z_{t-1} + Δvolume_{t-1} + Δquality_{t-1}
+    + e_t`` and report the **speed-of-adjustment loading** ``λ`` (``ec_coef``) and
+    its p-value (``ec_pvalue``). A significant **negative** ``λ`` means volume
+    adjusts toward the long-run equilibrium with quality.
+
+    Parameters
+    ----------
+    quality, volume :
+        Equal-length aligned **LEVEL** series (the :func:`prepare_series`
+        outputs, undifferenced).
+
+    Returns
+    -------
+    dict
+        ``{"cointegrated": bool, "ec_coef": float, "ec_pvalue": float,
+        "coint_pvalue": float}``. If not cointegrated (or degenerate / too short
+        / singular), ``cointegrated`` is ``False`` and ``ec_coef`` / ``ec_pvalue``
+        are ``NaN``; ``coint_pvalue`` is ``NaN`` only when ``coint`` itself cannot
+        be computed. Never raises.
+
+    Notes
+    -----
+    The ECM is fit in the **Δvolume** direction (the directional analogue of
+    ``quality → volume``); the threshold is ``coint_pvalue < 0.05`` (matching
+    ``panel_alpha`` / the FDR ``q``). These choices are documented in PR3D
+    HANDOFF FLAG 2 and, being informational-only, do not enter any gate.
+    """
+    import warnings
+
+    import numpy as np
+
+    nan = float("nan")
+    out = {"cointegrated": False, "ec_coef": nan, "ec_pvalue": nan, "coint_pvalue": nan}
+
+    q = np.asarray(quality, dtype="float64")
+    v = np.asarray(volume, dtype="float64")
+    n = min(q.size, v.size)
+    q = q[:n]
+    v = v[:n]
+
+    if n < 12 or not (np.all(np.isfinite(q)) and np.all(np.isfinite(v))):
+        return out
+    if np.std(q) == 0.0 or np.std(v) == 0.0:
+        return out
+
+    import statsmodels.api as sm
+    from statsmodels.tsa.stattools import coint
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _tstat, coint_p, _crit = coint(q, v)
+        out["coint_pvalue"] = float(coint_p)
+    except Exception:
+        return out
+    if not np.isfinite(out["coint_pvalue"]):
+        out["coint_pvalue"] = nan
+        return out
+
+    out["cointegrated"] = bool(out["coint_pvalue"] < 0.05)
+    if not out["cointegrated"]:
+        return out
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            # Long-run relation volume ~ const + quality; residual is the EC term.
+            lr = sm.OLS(v, sm.add_constant(q)).fit()
+            z = np.asarray(lr.resid, dtype="float64")
+
+            dv = np.diff(v)
+            dq = np.diff(q)
+            # Align: row t (t=1..len(dv)-1) uses Δvolume_t on the LHS and
+            # z_{t-1}, Δvolume_{t-1}, Δquality_{t-1} on the RHS.
+            y_ec = dv[1:]
+            z_lag = z[1:-1]  # z at the period preceding each Δvolume_t
+            dv_lag = dv[:-1]
+            dq_lag = dq[:-1]
+            x_ec = sm.add_constant(np.column_stack([z_lag, dv_lag, dq_lag]))
+            if x_ec.shape[0] <= x_ec.shape[1]:
+                return out  # cointegrated stays True, EC stays NaN (too short)
+            ecm = sm.OLS(y_ec, x_ec).fit()
+            # Column order: const, z_lag (EC loading), Δvolume_{t-1}, Δquality_{t-1}.
+            out["ec_coef"] = float(ecm.params[1])
+            out["ec_pvalue"] = float(ecm.pvalues[1])
+    except Exception:
+        return out
+    if not np.isfinite(out["ec_coef"]) or not np.isfinite(out["ec_pvalue"]):
+        out["ec_coef"] = nan
+        out["ec_pvalue"] = nan
+    return out
+
+
+def panel_toda_yamamoto(
+    level_pairs_by_topic,
+    *,
+    k: int = 3,
+    d_max: int = 1,
+):
+    """Pooled fixed-effects Toda–Yamamoto level-panel (mirror of :func:`panel_granger`).
+
+    Pure. The **level-panel** analogue of :func:`panel_granger`: it pools every
+    topic's *undifferenced LEVEL* ``(quality, volume)`` series into one stacked
+    panel with TOPIC fixed effects and, per direction, regresses the effect series
+    on its own ``(k + d_max)`` lags + the cause series' ``(k + d_max)`` lags +
+    topic dummies + a constant, then runs a **block Wald (F-test) on ONLY the
+    first ``k`` cross-lags** (the ``d_max`` augmenting cross-lag is included in the
+    regression but excluded from the restriction, mirroring the per-pair TY rule).
+    Unlike :func:`panel_granger`, the series are **NOT differenced**.
+
+    Parameters
+    ----------
+    level_pairs_by_topic :
+        Iterable of ``(quality, volume)`` **LEVEL** array pairs, ONE per evaluable
+        qualifying topic (the :func:`prepare_series` outputs, undifferenced).
+        Pairs too short to contribute a single lagged row (``< (k+d_max) + 1``
+        usable observations) are skipped, not raised on.
+    k :
+        Number of restricted (original) cross-lags. Pre-registered default ``3``.
+    d_max :
+        Augmenting lag count (estimated but excluded from the restriction).
+        Pre-registered default ``1``.
+
+    Returns
+    -------
+    tuple[float, float]
+        ``(p_q_to_v, p_v_to_q)`` block-F p-values on the first-``k`` cross-lags;
+        ``NaN`` if the pooled design cannot be fit (no usable rows / singular),
+        exactly as :func:`panel_granger` returns.
+
+    Notes
+    -----
+    Within-topic lagging never crosses a topic boundary (each topic's lagged
+    design is built independently, then stacked), so no spurious cross-topic
+    autoregression is introduced. A constant plus topic dummies (first level
+    dropped) absorb the topic means; the block-F restricts only the first ``k``
+    cross-lag columns. This is the level-panel test feeding criterion HL2 via
+    :func:`decide_f1`.
+    """
+    lag = k + d_max
+    blocks_qv = _build_panel(level_pairs_by_topic, target="volume", lag=lag)
+    blocks_vq = _build_panel(level_pairs_by_topic, target="quality", lag=lag)
+    p_q_to_v = _panel_block_ftest_first_k(blocks_qv, k=k)
+    p_v_to_q = _panel_block_ftest_first_k(blocks_vq, k=k)
+    return p_q_to_v, p_v_to_q
+
+
+def _panel_block_ftest_first_k(panel, *, k: int) -> float:
+    """OLS with topic FE; block-F p-value on ONLY the first ``k`` cross-series lags.
+
+    Identical pooled-OLS / topic-dummy construction to :func:`_panel_block_ftest`,
+    but the restriction matrix selects only the **first ``k``** cross-lag columns
+    (the remaining augmenting cross-lags are estimated but unrestricted), giving
+    the Toda–Yamamoto level-panel Wald. ``NaN`` on empty / singular, no raise.
+    """
+    import numpy as np
+
+    y = panel["y"]
+    own = panel["own"]
+    cross = panel["cross"]
+    topic = panel["topic"]
+    if y.size == 0:
+        return float("nan")
+
+    n_cross = cross.shape[1]
+    k_eff = min(k, n_cross)
+    if k_eff <= 0:
+        return float("nan")
+
+    # Topic dummies, dropping the first level so the constant is identified.
+    uniq = np.unique(topic)
+    if uniq.size >= 2:
+        dummy_levels = uniq[1:]
+        dummies = np.column_stack([(topic == lev).astype("float64") for lev in dummy_levels])
+    else:
+        dummies = np.empty((y.size, 0), dtype="float64")
+
+    const = np.ones((y.size, 1), dtype="float64")
+    # Column order: const | own lags | cross lags | topic dummies.
+    x = np.column_stack([const, own, cross, dummies])
+    n_const = 1
+    cross_start = n_const + own.shape[1]
+    # Restrict ONLY the first k cross-lag columns (TY: exclude the augmenting lag).
+    cross_idx = list(range(cross_start, cross_start + k_eff))
+
+    import statsmodels.api as sm
+
+    try:
+        with __import__("warnings").catch_warnings():
+            __import__("warnings").simplefilter("ignore")
+            model = sm.OLS(y, x).fit()
+            restriction = np.zeros((len(cross_idx), x.shape[1]), dtype="float64")
+            for i, j in enumerate(cross_idx):
+                restriction[i, j] = 1.0
+            ftest = model.f_test(restriction)
+            p = float(ftest.pvalue)
+    except Exception:
+        return float("nan")
+    if not np.isfinite(p):
+        return float("nan")
+    return p
