@@ -2,7 +2,7 @@
 
 **Session:** V1-S15 (Findings integration + Results draft + Gate G5 report)  **Date generated:** 2026-06-08  **Plan ref:** `plans/Session-Objectives-MAP.md` §V1-S15 (and the V1-S15 design spec §2)
 
-G5 decides whether the V1 narrative is strong enough to scale to V2. The pre-registered criterion is **≥2 of {F1, F2, F3} hold with statistical support AND co-authors agree the narrative is coherent.** This is the **STOP gate before V2**: if the bar is not met, V1 ships as a methods-and-resource paper rather than proceeding to a V2 scale-up. Every number below is reproduced end-to-end by `notebooks/11_F1_epistemic_cascade.ipynb`, `notebooks/12_F2_dual_novelty_trends.ipynb`, `notebooks/13_F3_forecasting_narrative.ipynb`, and `notebooks/14_bonus_cross_journal.ipynb`. This report produces a **mechanical** count + recommendation only; the narrative-coherence judgment and the final disposition are **Samer's + a co-author's**, and the sign-off below is left **blank**.
+G5 decides whether the V1 narrative is strong enough to scale to V2. The pre-registered criterion is **≥2 of {F1, F2, F3} hold with statistical support AND co-authors agree the narrative is coherent.** This is the **STOP gate before V2**: if the bar is not met, V1 ships as a methods-and-resource paper rather than proceeding to a V2 scale-up. Every number below is reproduced end-to-end by `notebooks/11_F1_epistemic_cascade.ipynb`, `notebooks/12_F2_dual_novelty_trends.ipynb`, `notebooks/13_F3_forecasting_narrative.ipynb`, and `notebooks/14_bonus_cross_journal.ipynb`. This report produces a **mechanical** count + recommendation only; the narrative-coherence judgment and the final disposition are **Samer's + a co-author's**. The sign-off below records **Samer's signed disposition (2026-06-08): DOWNSCOPE.**
 
 ---
 
@@ -67,13 +67,11 @@ That is my reading. **Whether the narrative is coherent enough to carry the pape
 Findings holding with statistical support = **1 of 3** (only F2; F1 and F3 are honest, pre-specified nulls). The pre-registered statistical bar for proceeding to V2 is **≥ 2 of 3**, so the **statistical bar is not met**. F1 — the pre-registered deciding vote — came back null, which is what brings the count below threshold. On the statistical criterion alone, the **mechanical recommendation is to DOWNSCOPE to a methods-and-resource paper**: that paper is still a real contribution — the validated multi-axis pipeline, the F2 dual-novelty finding, and two rigorously characterized nulls — but it is **not** a proceed-to-V2 on the ≥2-of-3 bar. The narrative-coherence sub-criterion (§2) and the final disposition are **human** and are left to Samer + a co-author.
 
 - [ ] PROCEED to V2 (≥2 of 3 findings hold + coherent narrative)
-- [ ] DOWNSCOPE to a methods-and-resource paper (<2 of 3 hold)  ← **(mechanical recommendation)**
+- [x] DOWNSCOPE to a methods-and-resource paper (<2 of 3 hold)  ← **(mechanical recommendation; accepted)**
 - [ ] other disposition (co-authors' call)
 
-**Decision: _______ (Samer + co-author)**
+**Decision: DOWNSCOPE to a methods-and-resource paper.** F1 — the pre-registered deciding vote — and F3 are both honest, pre-specified nulls; only F2 holds (1 of 3, below the ≥2-of-3 bar). V1 ships as a methods-and-resource paper: the validated multi-axis pipeline, the F2 dual-novelty finding (with its small-but-reliable impact inversion), and two rigorously characterized nulls (F1 internally pre-registered, F3 OSF-registered). The V2 scale-up is not triggered on the current findings. The narrative-coherence sub-criterion (§2) is affirmed on this sign-off for the downscoped framing.
 
-Signed: ______________________  Date: ____________
+Signed: _Samer G. Salman_  Date: _2026-06-08_
 
-> Co-author review required: the narrative-coherence sub-criterion (§2) is an unmet human judgment, and the final decision is Samer's + a co-author's — this report is unsigned and does not self-decide.
-
-**STOP — resolve G5 before V2.**
+Gate G5 is resolved (DOWNSCOPE). Per the Session-Objectives map, V1 proceeds as a methods-and-resource paper; the V2 scale-up is **not** triggered on the current findings.
