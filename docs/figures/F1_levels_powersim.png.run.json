@@ -1,0 +1,48 @@
+{
+  "config": {
+    "dpi": 120,
+    "figure": "F1_levels_powersim",
+    "grid": {
+      "T_grid": [
+        8,
+        15,
+        22,
+        30,
+        40
+      ],
+      "alpha": 0.05,
+      "beta_grid": [
+        0.0,
+        0.25,
+        0.5,
+        1.0,
+        2.0
+      ],
+      "dgps": [
+        "null",
+        "level_cascade",
+        "diff_cascade",
+        "level_cascade_coint"
+      ],
+      "lag": 2,
+      "n_rep": 500,
+      "seed": 20260609,
+      "verdict_power_read_T": 30,
+      "verdict_power_read_dgp": "level_cascade_coint"
+    },
+    "prereg": "PR3D_levels_diagnostic",
+    "session": "V1-S15 (PR3D diagnostic)",
+    "verdict": "TRUE",
+    "verdict_read_cell": "level_cascade_coint @ T=30"
+  },
+  "config_hash": "5399293526e9c3e1cd2f7271a13810214a2ec264eca6f43144b234d91f88d23c",
+  "git_dirty": true,
+  "git_sha": "aa75f8f67c180b795121f0c950445840de24b745",
+  "input_hashes": {},
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-09T18:46:33.350601+00:00"
+}
