@@ -1,0 +1,30 @@
+{
+  "config": {
+    "dpi": 120,
+    "entity_col": "journal_slug",
+    "figure": "bonus_seeding_network",
+    "layer": "bonus_exploratory_non_gating",
+    "n_edges_thresholded": 6,
+    "n_edges_total": 90,
+    "n_journals": 10,
+    "n_leaf_topics": 149,
+    "session": "V1-S15",
+    "top_follower": "Arthroscopy",
+    "top_follower_score": 0.4625901875901876,
+    "top_seeder": "Br J Surg",
+    "top_seeder_score": 0.7385634028892456,
+    "weight_threshold": 0.6
+  },
+  "config_hash": "657f63c8b4c91db8e276c203898d402927e1e277621c4619f67c717d2fe370ee",
+  "git_dirty": true,
+  "git_sha": "015ee9b578cdeb4650f396d739e1949dfb144607",
+  "input_hashes": {
+    "archetypes": "e1619127f48da2da33579acdba195c8a3eafd0dc6a7cb68cdf4f96a764dc29fc"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-09T02:59:55.149757+00:00"
+}

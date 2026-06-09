@@ -1,0 +1,36 @@
+{
+  "config": {
+    "arch_categories": [
+      "disruptive-novel",
+      "conventional-disruptive",
+      "novel-consolidating",
+      "incremental"
+    ],
+    "dpi": 120,
+    "f1_cascade_overall_verdict": "NULL",
+    "figure": "bonus_specialty_contrast",
+    "largest_arch_gap_category": "disruptive-novel",
+    "largest_arch_gap_value": -0.10150578277783004,
+    "layer": "bonus_exploratory_non_gating",
+    "seeding_gen_surg": 0.6752136752136753,
+    "seeding_ortho": 0.7398373983739838,
+    "session": "V1-S15",
+    "specialties": [
+      "orthopedic",
+      "general_surgery"
+    ]
+  },
+  "config_hash": "c174d28115b567bdc7c44e991673bf2606ea7a8342e06a2c613e8c98dd51a8dc",
+  "git_dirty": true,
+  "git_sha": "015ee9b578cdeb4650f396d739e1949dfb144607",
+  "input_hashes": {
+    "archetypes": "e1619127f48da2da33579acdba195c8a3eafd0dc6a7cb68cdf4f96a764dc29fc",
+    "f1_cascade_verdict": "7cf312f30b6d3cefddc4c1fadeba40651b1d6dfb9f95378939d31117a330a747"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-09T02:59:55.369643+00:00"
+}

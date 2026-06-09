@@ -1,0 +1,74 @@
+{
+  "config": {
+    "archetype_col": "arch_mean_cd5",
+    "dpi": 120,
+    "epsilon_squared": 0.023681499410993824,
+    "figure": "F2_dual_novelty_trends",
+    "finding": "F2 dual-novelty (enrichment; does NOT re-gate \u2014 Gate G3 PROCEED)",
+    "gate_ref": "G3_dual_novelty",
+    "impact_col": "cited_by_pctile_within_year",
+    "inversion_reconfirmed": true,
+    "kruskal_H": 1938.5836728581692,
+    "kruskal_k": 4,
+    "kruskal_n": 81738,
+    "kruskal_p_value": 0.0,
+    "median_pctile_by_archetype": {
+      "conventional-disruptive": 0.5233853006681515,
+      "disruptive-novel": 0.43293471234647707,
+      "incremental": 0.6068681318681318,
+      "novel-consolidating": 0.5022893772893773
+    },
+    "n_by_archetype_impact": {
+      "conventional-disruptive": 19474,
+      "disruptive-novel": 22662,
+      "incremental": 21392,
+      "novel-consolidating": 18210
+    },
+    "n_labeled_2x2": 81738,
+    "n_leaf_topics": 149,
+    "n_null_archetype_excluded": 7492,
+    "n_total_papers": 89230,
+    "per_archetype_counts": {
+      "conventional-disruptive": 19474,
+      "disruptive-novel": 22662,
+      "incremental": 21392,
+      "novel-consolidating": 18210
+    },
+    "session": "V1-S15",
+    "temporal_drift_le2000_ge2020": {
+      "conventional-disruptive": {
+        "delta": 0.08275215053047386,
+        "share_ge2020": 0.2890272462443594,
+        "share_le2000": 0.20627509571388553
+      },
+      "disruptive-novel": {
+        "delta": -0.040299523908004176,
+        "share_ge2020": 0.2853144456503113,
+        "share_le2000": 0.32561396955831545
+      },
+      "incremental": {
+        "delta": 0.012795399428905535,
+        "share_ge2020": 0.24036099845775977,
+        "share_le2000": 0.22756559902885423
+      },
+      "novel-consolidating": {
+        "delta": -0.05524802605137527,
+        "share_ge2020": 0.18529730964756955,
+        "share_le2000": 0.24054533569894482
+      }
+    },
+    "topn_topics_heatmap": 18
+  },
+  "config_hash": "5806fef80fc22f0a43d0a1761b8e672b370654deff0f54f0d477bacd76b1107c",
+  "git_dirty": true,
+  "git_sha": "015ee9b578cdeb4650f396d739e1949dfb144607",
+  "input_hashes": {
+    "archetypes": "e1619127f48da2da33579acdba195c8a3eafd0dc6a7cb68cdf4f96a764dc29fc"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-09T03:05:28.378914+00:00"
+}

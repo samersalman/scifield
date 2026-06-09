@@ -1,0 +1,34 @@
+{
+  "config": {
+    "affiliation_coverage_archetypes_leaf": 0.9653352206543696,
+    "affiliation_coverage_corpus": 0.9303163040981723,
+    "country_coverage_affiliated_rows": 0.9444806624365569,
+    "country_coverage_full_table": 0.557563702458932,
+    "country_min_topics": 30,
+    "dpi": 120,
+    "figure": "bonus_geographic",
+    "geographic_caveat": "Geographic seeding is exploratory: a country_code is present on only 56% of institutions in the corpus institutions table (16,258/29,159); blank-country rows are dropped (never imputed), so absent countries cannot masquerade as seeders. Country ranks are therefore over the affiliated, country-tagged subset only.",
+    "inst_min_topics": 80,
+    "layer": "bonus_exploratory_non_gating",
+    "n_paper_institution_rows": 585958,
+    "n_unique_institutions": 21803,
+    "session": "V1-S15",
+    "top_country": "US",
+    "top_country_score": 0.9940669100066256,
+    "top_institution": "Mayo Clinic",
+    "top_institution_score": 0.8215117441534173
+  },
+  "config_hash": "2f4bca1e07f68823c208fef63bd5a7f40f53008c397e2460cba758c72fe3468e",
+  "git_dirty": true,
+  "git_sha": "015ee9b578cdeb4650f396d739e1949dfb144607",
+  "input_hashes": {
+    "archetypes": "e1619127f48da2da33579acdba195c8a3eafd0dc6a7cb68cdf4f96a764dc29fc",
+    "papers_duckdb": "3a53767e18c003ef9b72ea74e15af8703a50479ab5029320e019cca240a5f651"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-09T02:59:56.293019+00:00"
+}

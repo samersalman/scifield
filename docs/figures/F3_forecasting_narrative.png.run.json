@@ -1,0 +1,37 @@
+{
+  "config": {
+    "ablation_delta_pp": -2.3384615384615337,
+    "auc_hgt": 0.7809230769230769,
+    "auc_no_graph": 0.8043076923076923,
+    "best_model": "no_graph",
+    "brier_direction": "favors_baseline",
+    "brier_pvalue": 2.6290290374285356e-11,
+    "dpi": 120,
+    "f1_n_directional": 0,
+    "f1_n_qualifying": 138,
+    "f1_verdict": "NULL",
+    "figure": "F3_forecasting_narrative",
+    "h1_bar_pp": 5.0,
+    "n_test": 138,
+    "n_test_pos": 13,
+    "narrative": "two_temporal_evolution_nulls_F1_F3_F2_holds",
+    "overall_pass": false,
+    "role": "integration_narrative",
+    "session": "V1-S15",
+    "source_metrics_config_hash": "6d739ccdc650bfdd742992330c7c0d04ae9abd490f1bf12afad254b5a8574a05",
+    "source_metrics_git_sha": "7c737d402976a2f2c65722a4972c6e029ac28ef1"
+  },
+  "config_hash": "95169968cae08b1f5a20d5e04dd31bfe11cef231b248803fd5a75a74971b9379",
+  "git_dirty": true,
+  "git_sha": "015ee9b578cdeb4650f396d739e1949dfb144607",
+  "input_hashes": {
+    "metrics": "864cc9007fc9065302659cf91d24089a620db22a52e1242ccf492ab3ec680b5b",
+    "wilcoxon": "7a7a037561a96151d2401a63d5aabdafd24e1b936ad85e683630f1c77c99b5b2"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-09T03:04:42.616339+00:00"
+}
