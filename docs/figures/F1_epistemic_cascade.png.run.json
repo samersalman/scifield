@@ -1,0 +1,57 @@
+{
+  "config": {
+    "dominant_direction_primary": "none",
+    "dpi": 120,
+    "exemplar_topics": [
+      110,
+      76,
+      55
+    ],
+    "figure": "F1_epistemic_cascade",
+    "frac_directional_primary": 0.0,
+    "n_directional_primary": 0,
+    "n_leaf_topics": 149,
+    "n_non_evaluable_primary": 10,
+    "n_qualifying": 138,
+    "n_universe_papers": 69339,
+    "panel_p_quality_lags_primary": 0.7392799167397095,
+    "panel_p_quality_leads_primary": 0.27712455387307633,
+    "params": {
+      "ccf_max_lag": 5,
+      "directional_rule": "exactly-one-direction FDR-significant",
+      "fdr_q": 0.05,
+      "granger_lag": 3,
+      "holds_frac": 0.2,
+      "max_nan_frac": 0.25,
+      "min_count": 5,
+      "min_years": 8,
+      "panel_alpha": 0.05,
+      "sign_convention": "negative peak lag = quality LEADS volume; positive = quality LAGS",
+      "tier_map": {
+        "RCT": 4,
+        "case_control": 2,
+        "case_series": 1,
+        "cohort": 3
+      },
+      "v_min": 30
+    },
+    "prereg": "PR3_epistemic_cascade",
+    "primary_holds": false,
+    "rct_share_holds": false,
+    "session": "V1-S15",
+    "verdicts_agree": true
+  },
+  "config_hash": "590ef32a659079238d56bce5b4e2d1923433d6382791f221666e667b34e90064",
+  "git_dirty": true,
+  "git_sha": "bab917d4d6a96ce132ba919c1301e62fa0c53501",
+  "input_hashes": {
+    "epistemic": "254be8766e55b24a172448483fcd960d3391ed4dbff9a9876bb9585dcfc5271c",
+    "novelty": "01b645474ff3f24007e790f450d1d82859a6d8c4d07d20d754d2c57d3faa5d41"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-09T02:43:04.673504+00:00"
+}
