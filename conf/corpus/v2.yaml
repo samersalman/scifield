@@ -44,8 +44,9 @@ journals:
     ta_terms: ["JAMA"]
   - slug: bmj
     display: "BMJ"
-    # VERIFY TA AT EXECUTION (BMJ rename history)
-    ta_terms: ["BMJ", "BMJ Clin Res Ed"]
+    # TA verified 2026-06-09: "BMJ"[TA]=81660 over 1995-2025 covers the window; the
+    # guessed historical "BMJ Clin Res Ed" TA returned 0 records and was dropped.
+    ta_terms: ["BMJ"]
   - slug: ann_intern_med
     display: "Ann. Intern. Med."
     ta_terms: ["Ann Intern Med"]
