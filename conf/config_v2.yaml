@@ -1,0 +1,13 @@
+# V2-S08 composition root. Selects the v2 corpus + v2 thematic (embed) groups so the
+# Hydra-rooted commands that read `cfg.thematic.*` — `scifield embed` and
+# `scifield faiss-build` — can be pointed at the v2 tree:
+#
+#   scifield embed       --config config_v2   # -> conf/thematic/embed_v2.yaml (data/v2 paths + research-only filter)
+#   scifield faiss-build --config config_v2   # -> v2 faiss.index + data/v2/faiss_pmid_map.parquet
+#
+# `topics` and `novelty` resolve their configs directly by path/name and do NOT use this
+# root (`scifield topics --config conf/thematic/topics_v2.yaml`, `scifield novelty <cmd> --config v2`).
+# The v1 composition root (conf/config.yaml) is left FROZEN.
+defaults:
+  - corpus: v2
+  - thematic: embed_v2

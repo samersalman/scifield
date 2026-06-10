@@ -1,0 +1,62 @@
+# V2-S08 — Novelty config (semantic + CD-index + Kùzu + cited_by harvest).
+# Faithful copy of conf/novelty/v1.yaml with every v1 data path repointed to
+# the v2 tree (data/v2/...); all numeric params are byte-identical to v1.
+# Flat YAML loaded directly via OmegaConf (mirrors conf/epistemic/v1.yaml);
+# the novelty CLI sub-app reads it through _load_novelty_config("v2").
+
+input:
+  duckdb_path: data/v2/papers.duckdb
+  topics_parquet: data/v2/topics.parquet
+  embeddings_parquet: data/v2/embeddings.parquet
+  faiss_index_path: data/v2/faiss.index
+  faiss_pmid_map_path: data/v2/faiss_pmid_map.parquet
+
+# Semantic-novelty "same field" partition. `topic` => topics.parquet.topic_id;
+# noise papers (topic_id == -1) fall back to a corpus-wide prior.
+field: topic
+noise_topic_id: -1
+
+output:
+  semantic_path: data/v2/novelty_semantic.parquet
+  cited_by_path: data/v2/enrichment/cited_by.parquet
+  cd_index_path: data/v2/cd_index.parquet
+  kuzu_dir: data/v2/kuzu_graph
+
+cd_index:
+  windows: [5, 10]
+  # CD is already bounded [-1, 1]; no extra normalization.
+  normalization: raw
+
+harvest:
+  # Polite-pool email is read from $OPENALEX_EMAIL at CLI time (never stored
+  # in YAML or sidecars), matching `scifield enrich`. Only non-secret tuning
+  # lives here.
+  base_url: https://api.openalex.org
+  cache_dir: data/v2/enrichment/cache/cited_by
+  manifest_dir: data/v2/manifests
+  # Throttle for the OpenAlex authenticated pool (api_key from $OPENALEX_API_KEY
+  # removes the polite-pool 100k/day cap). rate_limit gates the GLOBAL send rate
+  # across workers; concurrency only bounds in-flight requests. Kept ~8/s with a
+  # small worker pool — the circuit-breaker still stops cleanly on sustained 429.
+  concurrency: 3
+  batch_size: 50
+  rate_limit: 4.0
+  request_timeout_s: 30.0
+  max_retries: 5
+  # Dry-run sampling: how many focal works to sample when projecting the
+  # reference-side cited_by volume.
+  dry_run_sample_size: 200
+  # Fetch only citers within (focal_year, focal_year+N] — must be >= the largest
+  # CD window (cd_index.windows max = 10). Lossless for CD; cuts volume for old,
+  # heavily-cited papers.
+  citer_window_years: 10
+  # OR-batch up to N same-year focals per `cites:W1|W2|...` query (OpenAlex caps
+  # OR filters at 50). Collapses the low-cited tail's ~1-request-per-focal cost.
+  focal_batch_size: 50
+
+# V1-S11 — dual-novelty 2×2 archetype binning (semantic × structural).
+archetypes:
+  semantic_metrics: [sem_nov_mean, sem_nov_min]
+  structural_metrics: [cd5, cd10]
+  split: median            # global fixed-median split (thresholds frozen corpus-wide)
+  output_path: data/v2/archetypes.parquet

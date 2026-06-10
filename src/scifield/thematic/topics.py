@@ -43,6 +43,7 @@ __all__ = [
     "SweepRow",
     "make_bertopic_model",
     "fit_topics",
+    "fit_subsample_assign_all",
     "build_hierarchy",
     "sweep",
 ]
@@ -63,10 +64,16 @@ class TopicConfig:
     hdbscan_min_cluster_size: int = 50
     hdbscan_min_samples: int | None = None
     hdbscan_cluster_selection_method: str = "eom"
-    nr_topics: str | int = "auto"
+    nr_topics: str | int | None = "auto"
     random_state: int = 42
     vectorizer_min_df: int = 10
     vectorizer_ngram_max: int = 2
+    # HDBSCAN core-distance parallelism. DEFAULT 1 keeps v1 byte-reproducible.
+    # v2 large-scale runs can set this >1 (or -1 for all cores) for speed:
+    # core-distance computation is order-independent so this changes runtime
+    # only, not cluster membership. (UMAP determinism is governed separately
+    # by ``random_state``.)
+    core_dist_n_jobs: int = 1
 
 
 @dataclass
@@ -82,38 +89,59 @@ class SweepRow:
     error: str | None = None
 
 
-def make_bertopic_model(cfg: TopicConfig) -> BERTopic:
+def make_bertopic_model(
+    cfg: TopicConfig,
+    *,
+    umap_model: Any = None,
+    hdbscan_model: Any = None,
+) -> BERTopic:
     """Construct an unfit :class:`bertopic.BERTopic` per ``cfg``.
 
     ``embedding_model=None`` is the contract that says "I will supply
     pre-computed embeddings at fit time". The vectorizer is built from
     ``cfg.vectorizer_*`` so c-TF-IDF runs on the same biomedical text the
     topics were learned on, without re-encoding.
+
+    Injection hooks (both default ``None``, so the v1 path is byte-identical):
+        ``umap_model`` / ``hdbscan_model`` — if supplied, that pre-built
+        estimator is used verbatim in place of the default UMAP / HDBSCAN.
+        This is the seam for wiring a GPU cuML ``UMAP`` / ``HDBSCAN`` at
+        V2 scale without touching this module again; the injected HDBSCAN
+        must expose ``prediction_data`` so :func:`fit_subsample_assign_all`
+        can ``approximate_predict`` the held-out remainder. When neither is
+        injected, the sklearn/umap-learn/hdbscan defaults are constructed
+        exactly as in v1.
     """
     from bertopic import BERTopic
-    from hdbscan import HDBSCAN
     from sklearn.feature_extraction.text import CountVectorizer
-    from umap import UMAP
 
     vectorizer = CountVectorizer(
         stop_words="english",
         min_df=cfg.vectorizer_min_df,
         ngram_range=(1, cfg.vectorizer_ngram_max),
     )
-    umap_model = UMAP(
-        n_neighbors=cfg.umap_n_neighbors,
-        n_components=cfg.umap_n_components,
-        min_dist=cfg.umap_min_dist,
-        metric=cfg.umap_metric,
-        random_state=cfg.random_state,
-    )
-    hdbscan_model = HDBSCAN(
-        min_cluster_size=cfg.hdbscan_min_cluster_size,
-        min_samples=cfg.hdbscan_min_samples,
-        cluster_selection_method=cfg.hdbscan_cluster_selection_method,
-        core_dist_n_jobs=1,
-        prediction_data=True,
-    )
+    if umap_model is None:
+        from umap import UMAP
+
+        umap_model = UMAP(
+            n_neighbors=cfg.umap_n_neighbors,
+            n_components=cfg.umap_n_components,
+            min_dist=cfg.umap_min_dist,
+            metric=cfg.umap_metric,
+            random_state=cfg.random_state,
+        )
+    if hdbscan_model is None:
+        from hdbscan import HDBSCAN
+
+        hdbscan_model = HDBSCAN(
+            min_cluster_size=cfg.hdbscan_min_cluster_size,
+            min_samples=cfg.hdbscan_min_samples,
+            cluster_selection_method=cfg.hdbscan_cluster_selection_method,
+            # DEFAULT 1 → v1 byte-reproducible; v2 may set this >1 / -1 for
+            # parallel core-distance compute (speed only, not membership).
+            core_dist_n_jobs=getattr(cfg, "core_dist_n_jobs", 1),
+            prediction_data=True,
+        )
     return BERTopic(
         embedding_model=None,
         umap_model=umap_model,
@@ -145,6 +173,84 @@ def fit_topics(
     model = make_bertopic_model(cfg)
     model.fit(documents, embeddings=emb)
     return model
+
+
+def fit_subsample_assign_all(
+    embeddings: np.ndarray,
+    documents: list[str],
+    cfg: TopicConfig,
+    *,
+    subsample_n: int,
+    seed: int | None = None,
+    umap_model: Any = None,
+    hdbscan_model: Any = None,
+) -> tuple[BERTopic, list[int], np.ndarray]:
+    """Fit on a deterministic subsample, then assign *all* points (the scaling fix).
+
+    The v1 full path (:func:`fit_topics`) up-casts the whole matrix to fp32,
+    pins ``random_state`` (which serialises UMAP), and runs HDBSCAN core-dist
+    single-threaded — infeasible at 1.5-2M points. This path instead fits
+    UMAP+HDBSCAN on ``subsample_n`` rows, then folds the remainder in via
+    BERTopic's ``transform`` (fitted ``UMAP.transform`` →
+    ``hdbscan.approximate_predict``), which ``prediction_data=True`` on the
+    HDBSCAN model enables.
+
+    Determinism: rows are drawn with a seeded ``numpy`` RNG (default seed =
+    ``cfg.random_state``), so the same inputs + seed select the same
+    subsample and yield the same assignments.
+
+    The returned ``model.topics_`` is overwritten with the *full-length*
+    assignments (aligned to the original ``embeddings`` / ``documents`` row
+    order) so the existing downstream path — ``build_hierarchy`` (which keys
+    a ``len(docs) == len(model.topics_)`` frame) and the per-pmid assignment
+    table — consumes it unchanged.
+
+    Returns ``(model, topics, probabilities)`` mirroring BERTopic's
+    ``transform`` contract: ``topics`` is a Python ``list[int]`` of length
+    ``len(documents)``; ``probabilities`` is the aligned probability array.
+    """
+    if embeddings.ndim != 2:
+        raise ValueError(f"embeddings must be 2-D; got shape {embeddings.shape}")
+    if embeddings.shape[0] != len(documents):
+        raise ValueError(
+            f"row/document mismatch: {embeddings.shape[0]} embeddings vs {len(documents)} docs"
+        )
+    n_total = embeddings.shape[0]
+    k = int(subsample_n)
+    if k <= 0:
+        raise ValueError(f"subsample_n must be positive; got {subsample_n}")
+
+    emb = np.ascontiguousarray(embeddings, dtype=np.float32)
+    rng_seed = cfg.random_state if seed is None else int(seed)
+    rng = np.random.default_rng(rng_seed)
+
+    if k >= n_total:
+        # Subsample is the whole corpus: fit on everything (no held-out
+        # remainder), but still take the transform-assign path so the return
+        # shape and topic-id mapping match the genuine-subsample case.
+        sub_idx = np.arange(n_total)
+    else:
+        sub_idx = np.sort(rng.choice(n_total, size=k, replace=False))
+
+    sub_emb = np.ascontiguousarray(emb[sub_idx], dtype=np.float32)
+    sub_docs = [documents[i] for i in sub_idx.tolist()]
+
+    model = make_bertopic_model(cfg, umap_model=umap_model, hdbscan_model=hdbscan_model)
+    model.fit(sub_docs, embeddings=sub_emb)
+
+    # Assign ALL rows (subsample + remainder) in original order. transform()
+    # runs the fitted UMAP.transform → hdbscan.approximate_predict and then
+    # remaps topic ids through any nr_topics reduction, so the ids match the
+    # fitted model's reduced topic space.
+    topics, probabilities = model.transform(documents, embeddings=emb)
+    topics = [int(t) for t in topics]
+    if len(topics) != n_total:
+        raise ValueError(f"assign length {len(topics)} != n_input {n_total}; transform misaligned")
+
+    # Overwrite topics_ so downstream (build_hierarchy, assignment table) sees
+    # the full-length, original-order assignments rather than the subsample's.
+    model.topics_ = topics
+    return model, topics, probabilities
 
 
 # --- Hierarchy via union-find on hierarchical_topics merges -----------------

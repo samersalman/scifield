@@ -1,0 +1,318 @@
+# v2 roster ~78 journals. Indicative TA terms — VERIFY each with a one-shot esearch smoke test before the full harvest (esp. rename histories).
+journals:
+  # ---- Tier 0 (10, KEEP) — copied verbatim from v1.yaml, re-harvested into the v2 tree ----
+  - slug: j_bone_joint_surg_am
+    display: "J. Bone & Joint Surgery (Am)"
+    ta_terms: ["J Bone Joint Surg Am"]
+  - slug: arthroscopy
+    display: "Arthroscopy"
+    ta_terms: ["Arthroscopy"]
+  - slug: j_arthroplasty
+    display: "Journal of Arthroplasty"
+    ta_terms: ["J Arthroplasty"]
+  - slug: spine
+    display: "Spine"
+    ta_terms: ["Spine (Phila Pa 1976)"]
+  - slug: clin_orthop_relat_res
+    display: "Clinical Orthopaedics & Related Research"
+    ta_terms: ["Clin Orthop Relat Res"]
+  - slug: ann_surg
+    display: "Annals of Surgery"
+    ta_terms: ["Ann Surg"]
+  - slug: jama_surg
+    display: "JAMA Surgery (incl. Arch Surg pre-2013)"
+    ta_terms: ["JAMA Surg", "Arch Surg"]
+  - slug: j_am_coll_surg
+    display: "Journal of the American College of Surgeons"
+    ta_terms: ["J Am Coll Surg"]
+  - slug: br_j_surg
+    display: "British Journal of Surgery"
+    ta_terms: ["Br J Surg"]
+  - slug: surgery
+    display: "Surgery"
+    ta_terms: ["Surgery"]
+
+  # ---- Tier 1 — Generalist source layer (8). LOCKED slugs (must match other modules) ----
+  - slug: n_engl_j_med
+    display: "N. Engl. J. Med."
+    ta_terms: ["N Engl J Med"]
+  - slug: lancet
+    display: "Lancet"
+    ta_terms: ["Lancet"]
+  - slug: jama
+    display: "JAMA"
+    ta_terms: ["JAMA"]
+  - slug: bmj
+    display: "BMJ"
+    # VERIFY TA AT EXECUTION (BMJ rename history)
+    ta_terms: ["BMJ", "BMJ Clin Res Ed"]
+  - slug: ann_intern_med
+    display: "Ann. Intern. Med."
+    ta_terms: ["Ann Intern Med"]
+  - slug: nature
+    display: "Nature"
+    ta_terms: ["Nature"]
+  - slug: science
+    display: "Science"
+    ta_terms: ["Science"]
+  - slug: proc_natl_acad_sci_usa
+    display: "PNAS"
+    ta_terms: ["Proc Natl Acad Sci U S A"]
+
+  # ---- Tier 2 — Orthopedic depth (9) ----
+  - slug: bone_joint_j
+    display: "Bone Joint J"
+    ta_terms: ["Bone Joint J", "J Bone Joint Surg Br"]   # formerly JBJS-Br
+  - slug: am_j_sports_med
+    display: "Am J Sports Med"
+    ta_terms: ["Am J Sports Med"]
+  - slug: j_orthop_res
+    display: "J Orthop Res"
+    ta_terms: ["J Orthop Res"]
+  - slug: j_shoulder_elbow_surg
+    display: "J Shoulder Elbow Surg"
+    ta_terms: ["J Shoulder Elbow Surg"]
+  - slug: spine_j
+    display: "Spine J"
+    ta_terms: ["Spine J"]
+  - slug: knee_surg_sports_traumatol_arthrosc
+    display: "Knee Surg Sports Traumatol Arthrosc"
+    ta_terms: ["Knee Surg Sports Traumatol Arthrosc"]
+  - slug: j_orthop_trauma
+    display: "J Orthop Trauma"
+    ta_terms: ["J Orthop Trauma"]
+  - slug: acta_orthop
+    display: "Acta Orthop"
+    ta_terms: ["Acta Orthop"]
+  - slug: osteoarthritis_cartilage
+    display: "Osteoarthritis Cartilage"
+    ta_terms: ["Osteoarthritis Cartilage"]
+
+  # ---- Tier 3 — General/subspecialty surgery (9) ----
+  - slug: ann_surg_oncol
+    display: "Ann Surg Oncol"
+    ta_terms: ["Ann Surg Oncol"]
+  - slug: surg_endosc
+    display: "Surg Endosc"
+    ta_terms: ["Surg Endosc"]
+  - slug: world_j_surg
+    display: "World J Surg"
+    ta_terms: ["World J Surg"]
+  - slug: j_gastrointest_surg
+    display: "J Gastrointest Surg"
+    ta_terms: ["J Gastrointest Surg"]
+  - slug: dis_colon_rectum
+    display: "Dis Colon Rectum"
+    ta_terms: ["Dis Colon Rectum"]
+  - slug: am_j_surg
+    display: "Am J Surg"
+    ta_terms: ["Am J Surg"]
+  - slug: j_vasc_surg
+    display: "J Vasc Surg"
+    ta_terms: ["J Vasc Surg"]
+  - slug: ann_thorac_surg
+    display: "Ann Thorac Surg"
+    ta_terms: ["Ann Thorac Surg"]
+  - slug: plast_reconstr_surg
+    display: "Plast Reconstr Surg"
+    ta_terms: ["Plast Reconstr Surg"]
+
+  # ---- Tier 4 — Broad-medicine clusters (32) ----
+  # Cardiology
+  - slug: circulation
+    display: "Circulation"
+    ta_terms: ["Circulation"]
+  - slug: j_am_coll_cardiol
+    display: "J Am Coll Cardiol"
+    ta_terms: ["J Am Coll Cardiol"]
+  - slug: eur_heart_j
+    display: "Eur Heart J"
+    ta_terms: ["Eur Heart J"]
+  # Oncology
+  - slug: j_clin_oncol
+    display: "J Clin Oncol"
+    ta_terms: ["J Clin Oncol"]
+  - slug: lancet_oncol
+    display: "Lancet Oncol"
+    ta_terms: ["Lancet Oncol"]
+  - slug: jama_oncol
+    display: "JAMA Oncol"
+    ta_terms: ["JAMA Oncol"]
+  # Neurology
+  - slug: neurology
+    display: "Neurology"
+    ta_terms: ["Neurology"]
+  - slug: lancet_neurol
+    display: "Lancet Neurol"
+    ta_terms: ["Lancet Neurol"]
+  - slug: jama_neurol
+    display: "JAMA Neurol"
+    ta_terms: ["JAMA Neurol"]
+  - slug: brain
+    display: "Brain"
+    ta_terms: ["Brain"]
+  # Infectious disease
+  - slug: lancet_infect_dis
+    display: "Lancet Infect Dis"
+    ta_terms: ["Lancet Infect Dis"]
+  - slug: clin_infect_dis
+    display: "Clin Infect Dis"
+    ta_terms: ["Clin Infect Dis"]
+  - slug: j_infect_dis
+    display: "J Infect Dis"
+    ta_terms: ["J Infect Dis"]
+  # Pulmonary / Critical care
+  - slug: am_j_respir_crit_care_med
+    display: "Am J Respir Crit Care Med"
+    ta_terms: ["Am J Respir Crit Care Med"]
+  - slug: chest
+    display: "Chest"
+    ta_terms: ["Chest"]
+  - slug: crit_care_med
+    display: "Crit Care Med"
+    ta_terms: ["Crit Care Med"]
+  - slug: intensive_care_med
+    display: "Intensive Care Med"
+    ta_terms: ["Intensive Care Med"]
+  # Gastroenterology
+  - slug: gastroenterology
+    display: "Gastroenterology"
+    ta_terms: ["Gastroenterology"]
+  - slug: gut
+    display: "Gut"
+    ta_terms: ["Gut"]
+  - slug: hepatology
+    display: "Hepatology"
+    ta_terms: ["Hepatology"]
+  # Endocrine / Diabetes
+  - slug: diabetes_care
+    display: "Diabetes Care"
+    ta_terms: ["Diabetes Care"]
+  - slug: j_clin_endocrinol_metab
+    display: "J Clin Endocrinol Metab"
+    ta_terms: ["J Clin Endocrinol Metab"]
+  - slug: lancet_diabetes_endocrinol
+    display: "Lancet Diabetes Endocrinol"
+    ta_terms: ["Lancet Diabetes Endocrinol"]
+  # Nephrology
+  - slug: j_am_soc_nephrol
+    display: "J Am Soc Nephrol"
+    ta_terms: ["J Am Soc Nephrol"]
+  - slug: kidney_int
+    display: "Kidney Int"
+    ta_terms: ["Kidney Int"]
+  # Psychiatry
+  - slug: jama_psychiatry
+    display: "JAMA Psychiatry"
+    ta_terms: ["JAMA Psychiatry", "Arch Gen Psychiatry"]   # rename history
+  - slug: am_j_psychiatry
+    display: "Am J Psychiatry"
+    ta_terms: ["Am J Psychiatry"]
+  - slug: lancet_psychiatry
+    display: "Lancet Psychiatry"
+    ta_terms: ["Lancet Psychiatry"]
+  # Pediatrics
+  - slug: pediatrics
+    display: "Pediatrics"
+    ta_terms: ["Pediatrics"]
+  - slug: jama_pediatr
+    display: "JAMA Pediatr"
+    ta_terms: ["JAMA Pediatr", "Arch Pediatr Adolesc Med"]   # rename history
+  # OB/GYN
+  - slug: obstet_gynecol
+    display: "Obstet Gynecol"
+    ta_terms: ["Obstet Gynecol"]
+  - slug: am_j_obstet_gynecol
+    display: "Am J Obstet Gynecol"
+    ta_terms: ["Am J Obstet Gynecol"]
+
+  # ---- Tier 5 — AI-active + medical-AI/informatics (10) ----
+  # Radiology / Imaging
+  - slug: radiology
+    display: "Radiology"
+    ta_terms: ["Radiology"]
+  - slug: eur_radiol
+    display: "Eur Radiol"
+    ta_terms: ["Eur Radiol"]
+  - slug: radiol_artif_intell
+    display: "Radiol Artif Intell"
+    ta_terms: ["Radiol Artif Intell"]
+  # Pathology
+  - slug: am_j_surg_pathol
+    display: "Am J Surg Pathol"
+    ta_terms: ["Am J Surg Pathol"]
+  - slug: mod_pathol
+    display: "Mod Pathol"
+    ta_terms: ["Mod Pathol"]
+  # Medical AI / informatics
+  - slug: j_am_med_inform_assoc
+    display: "J Am Med Inform Assoc"
+    ta_terms: ["J Am Med Inform Assoc"]
+  - slug: lancet_digit_health
+    display: "Lancet Digit Health"
+    ta_terms: ["Lancet Digit Health"]
+  - slug: npj_digit_med
+    display: "NPJ Digit Med"
+    ta_terms: ["NPJ Digit Med"]
+  - slug: j_med_internet_res
+    display: "J Med Internet Res"
+    ta_terms: ["J Med Internet Res"]
+  - slug: nat_mach_intell
+    display: "Nat Mach Intell"
+    ta_terms: ["Nat Mach Intell"]
+
+year_range: [1995, 2025]
+
+entrez:
+  email: "samer.salman2021@gmail.com"
+  # api_key is read from NCBI_API_KEY env var at runtime; not stored in config.
+  base_url: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+  request_timeout_s: 60
+  max_retries: 5
+
+harvest:
+  batch_size: 200          # PMIDs per efetch call
+  rate_limit_with_key: 9   # req/s when NCBI_API_KEY set (NCBI ceiling is 10; leave headroom)
+  rate_limit_no_key: 2     # req/s without key (NCBI ceiling is 3; leave headroom)
+
+output:
+  parquet_dir: "data/v2/parquet"
+  duckdb_path: "data/v2/papers.duckdb"
+  manifest_dir: "data/v2/manifests"
+  log_dir: "data/v2/logs"
+
+enrichment:
+  # OPENALEX_EMAIL is read from env at runtime; required (polite pool).
+  # SEMANTIC_SCHOLAR_API_KEY is read from env at runtime; optional.
+  output:
+    enrichment_dir: "data/v2/enrichment"
+    # Seed once from data/v1/enrichment/cache (cp -r) before `scifield enrich --config v2` to reuse the 122k surgical PMID cache hits while keeping data/v1 frozen — operational step.
+    cache_dir: "data/v2/enrichment/cache"
+    manifest_dir: "data/v2/enrichment/manifests"
+    log_dir: "data/v2/enrichment/logs"
+
+  openalex:
+    base_url: "https://api.openalex.org"
+    batch_size: 50          # PMIDs per filter call (OpenAlex cap)
+    rate_limit: 8           # req/s — polite pool tolerates 10, leave headroom
+    request_timeout_s: 60
+    max_retries: 5
+
+  semantic_scholar:
+    base_url: "https://api.semanticscholar.org/graph/v1"
+    batch_size: 100         # PMIDs per /paper/batch call
+    rate_limit_with_key: 1  # S2 individual-key tier: 1 req/s cumulative
+    rate_limit_no_key: 1    # public tier: also 1 req/s
+    request_timeout_s: 60
+    max_retries: 5
+
+  ror:
+    base_url: "https://api.ror.org"
+    rate_limit: 5           # req/s — ROR is unauthenticated and permissive
+    request_timeout_s: 30
+    max_retries: 4
+    min_match_score: 0.85
+
+  authors:
+    # Hash salt for the heuristic disambiguation layer (Layer 3).
+    heuristic_salt: "scifield_v1"

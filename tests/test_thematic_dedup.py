@@ -77,6 +77,58 @@ def test_ensure_papers_distinct_view_works_without_fetched_at(tmp_path: Path) ->
     assert total == distinct == 3
 
 
+def test_cross_journal_collision_prefers_specialty(tmp_path: Path) -> None:
+    """A PMID co-listed under a generalist + a specialty journal keeps the
+    specialty row, regardless of abstract length or insertion order."""
+    con = duckdb.connect(str(tmp_path / "papers.duckdb"))
+    con.execute(
+        "CREATE TABLE papers (pmid BIGINT, title VARCHAR, abstract VARCHAR, "
+        "journal_slug VARCHAR, fetched_at TIMESTAMP)"
+    )
+    con.executemany(
+        "INSERT INTO papers VALUES (?, ?, ?, ?, ?)",
+        [
+            # pmid 1: generalist row has the LONGER abstract + FRESHER fetch,
+            # yet specialty must still win on the generalist-demotion term.
+            (1, "t1", "a much longer abstract here", "nature", "2025-01-02 10:00:00"),
+            (1, "t1", "short", "j_orthop_surg", "2025-01-01 10:00:00"),
+            # pmid 2: two specialty journals (no generalist) — deterministic
+            # final tiebreak is journal_slug ASC, so 'a_surg' beats 'z_surg'.
+            (2, "t2", "same", "z_surg", "2025-01-03 10:00:00"),
+            (2, "t2", "same", "a_surg", "2025-01-03 10:00:00"),
+        ],
+    )
+    ensure_papers_distinct_view(con)
+    total, distinct = con.execute(
+        "SELECT COUNT(*), COUNT(DISTINCT pmid) FROM papers_distinct"
+    ).fetchone()
+    assert total == distinct == 2
+    slug1 = con.execute("SELECT journal_slug FROM papers_distinct WHERE pmid = 1").fetchone()[0]
+    assert slug1 == "j_orthop_surg"
+    slug2 = con.execute("SELECT journal_slug FROM papers_distinct WHERE pmid = 2").fetchone()[0]
+    assert slug2 == "a_surg"
+
+
+def test_specialty_only_unaffected_by_generalist_term(tmp_path: Path) -> None:
+    """v1-style specialty-only corpus: the longest-abstract winner is
+    unchanged — the generalist-demotion term is a no-op when no row is a
+    generalist (backward-compat guard for v1 outputs)."""
+    con = duckdb.connect(str(tmp_path / "papers.duckdb"))
+    con.execute(
+        "CREATE TABLE papers (pmid BIGINT, title VARCHAR, abstract VARCHAR, journal_slug VARCHAR)"
+    )
+    con.executemany(
+        "INSERT INTO papers VALUES (?, ?, ?, ?)",
+        [
+            (1, "t1", "longer abstract", "j_orthop_surg"),
+            (1, "t1", "short", "j_orthop_surg"),
+        ],
+    )
+    ensure_papers_distinct_view(con)
+    abstract = con.execute("SELECT abstract FROM papers_distinct WHERE pmid = 1").fetchone()[0]
+    assert abstract == "longer abstract"
+
+
 def test_integrity_check_counts(tmp_path: Path) -> None:
     con = _make_papers_db(tmp_path, with_fetched_at=True)
     report = integrity_check_v1_carryover(con)

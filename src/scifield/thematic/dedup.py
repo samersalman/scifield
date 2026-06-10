@@ -26,11 +26,29 @@ import duckdb
 import numpy as np
 import pyarrow.parquet as pq
 
+# Tier-1 generalist journals (conf/corpus/v2.yaml): the single source of truth is
+# scifield.cartography.corpus_config. On a cross-journal PMID collision, the dedup
+# tiebreak prefers the more-specific specialty journal, so generalists are sorted
+# LAST. corpus_config imports only stdlib + yaml (no cartography/thematic siblings),
+# so this import is cycle-free.
+from scifield.cartography.corpus_config import get_generalist_slugs
+
 __all__ = [
     "ensure_papers_distinct_view",
     "load_deduped_embeddings",
     "integrity_check_v1_carryover",
 ]
+
+
+def _sql_quote_str_list(slugs: frozenset[str]) -> str:
+    """Render ``slugs`` as a DuckDB string IN-list, single-quote escaped.
+
+    Sorted for a stable, deterministic SQL string (the VIEW DDL is otherwise
+    sensitive to frozenset iteration order). Single quotes are doubled per the
+    SQL standard so the literal is injection-safe even if a slug ever contains
+    one.
+    """
+    return ", ".join("'" + s.replace("'", "''") + "'" for s in sorted(slugs))
 
 
 def _papers_columns(con: duckdb.DuckDBPyConnection) -> set[str]:
@@ -43,19 +61,48 @@ def _papers_columns(con: duckdb.DuckDBPyConnection) -> set[str]:
 def ensure_papers_distinct_view(con: duckdb.DuckDBPyConnection) -> None:
     """Create or replace the ``papers_distinct`` VIEW with one row per PMID.
 
-    Tiebreak prefers the longest abstract (NULLs last) and, when the
-    ``fetched_at`` column is present, the freshest fetch. We fall back to
-    the abstract-only ordering for older snapshots that pre-date the
-    ``fetched_at`` column; this keeps the helper backwards-compatible
-    without conditionals inside the SQL.
+    Tiebreak order, most-significant first:
+
+    1. **Generalist demotion** — on a cross-journal PMID collision (a paper
+       co-listed under a Tier-1 generalist and a specialty journal), the
+       more-specific specialty row wins: generalists
+       (:func:`scifield.cartography.corpus_config.get_generalist_slugs`) get
+       ``CASE = 1`` and sort last, specialty/surgical rows get ``0``.
+    2. **Longest abstract** (NULLs last).
+    3. **Freshest fetch** (``fetched_at DESC``), when that column is present.
+       We fall back to abstract-only ordering for older snapshots that
+       pre-date ``fetched_at``; this keeps the helper backwards-compatible.
+    4. **``journal_slug`` ASC** — a final total-order tiebreak so the row
+       kept is fully deterministic even under exact ties on (1)–(3).
+
+    For v1's specialty-only corpus no row is a generalist, so terms (1) and
+    (4) never change which row wins versus the historical abstract/freshness
+    ordering — (4) only decides ties that did not previously occur.
+
+    Terms (1) and (4) are emitted only when the ``journal_slug`` column is
+    present (it always is on the real store schema; this guard keeps the
+    helper working on minimal/legacy snapshots that omit it, mirroring the
+    ``fetched_at`` fallback).
 
     The assertion at the end is the contract: callers can rely on
     ``COUNT(*) == COUNT(DISTINCT pmid)`` post-call.
     """
-    has_fetched_at = "fetched_at" in _papers_columns(con)
-    order_clause = "length(abstract) DESC NULLS LAST"
+    columns = _papers_columns(con)
+    has_fetched_at = "fetched_at" in columns
+    has_journal_slug = "journal_slug" in columns
+
+    order_parts: list[str] = []
+    if has_journal_slug:
+        generalist_in_list = _sql_quote_str_list(get_generalist_slugs())
+        order_parts.append(
+            f"(CASE WHEN journal_slug IN ({generalist_in_list}) THEN 1 ELSE 0 END) ASC"
+        )
+    order_parts.append("length(abstract) DESC NULLS LAST")
     if has_fetched_at:
-        order_clause += ", fetched_at DESC"
+        order_parts.append("fetched_at DESC")
+    if has_journal_slug:
+        order_parts.append("journal_slug ASC")
+    order_clause = ", ".join(order_parts)
 
     sql = f"""
         CREATE OR REPLACE VIEW papers_distinct AS

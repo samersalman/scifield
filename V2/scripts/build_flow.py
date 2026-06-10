@@ -36,18 +36,39 @@ from pathlib import Path
 
 import duckdb
 import pandas as pd
+from _path_config import get_paths, resolve_data_version  # V2/scripts sibling helper
 
 from scifield.cartography.flow import assert_canonical_journals, build_flow_table
 from scifield.repro import record_run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ARCHETYPES = REPO_ROOT / "data/v1/archetypes.parquet"
-PAPERS_DUCKDB = REPO_ROOT / "data/v1/papers.duckdb"
-TOPIC_HIERARCHY = REPO_ROOT / "data/v1/topic_hierarchy.parquet"
-KUZU_GRAPH = REPO_ROOT / "data/v1/kuzu_graph"
-OUT_DIR = REPO_ROOT / "V2/data/flow"
+
+# Data-version-derived paths. Populated for the default ("v1") at import so the
+# module-level constants keep their historical values; `main()` re-resolves them
+# from `--data-version` / $SCIFIELD_DATA_VERSION before any I/O runs.
+_PATHS = get_paths(REPO_ROOT, resolve_data_version())
+ARCHETYPES = _PATHS["ARCHETYPES"]
+PAPERS_DUCKDB = _PATHS["PAPERS_DUCKDB"]
+TOPIC_HIERARCHY = _PATHS["TOPIC_HIERARCHY"]
+KUZU_GRAPH = _PATHS["KUZU_GRAPH"]
+OUT_DIR = _PATHS["FLOW_DIR"]
 
 NOISE_TOPIC_ID = -1
+
+
+def _set_paths(version: str) -> None:
+    """Rebind the module-level path constants for a resolved data version.
+
+    The loader helpers read these as module globals, so re-resolving here (from
+    ``main``) repoints every input/output without touching their signatures.
+    """
+    global ARCHETYPES, PAPERS_DUCKDB, TOPIC_HIERARCHY, KUZU_GRAPH, OUT_DIR
+    p = get_paths(REPO_ROOT, version)
+    ARCHETYPES = p["ARCHETYPES"]
+    PAPERS_DUCKDB = p["PAPERS_DUCKDB"]
+    TOPIC_HIERARCHY = p["TOPIC_HIERARCHY"]
+    KUZU_GRAPH = p["KUZU_GRAPH"]
+    OUT_DIR = p["FLOW_DIR"]
 
 
 def load_papers_topics() -> pd.DataFrame:
@@ -205,7 +226,15 @@ def main() -> None:
         action="store_true",
         help="skip the Kuzu CITES pull; emit the not-computed sentinel columns",
     )
+    parser.add_argument(
+        "--data-version",
+        default=None,
+        help="data version to build (default: $SCIFIELD_DATA_VERSION or 'v1'); "
+        "v1 reads data/v1 + writes V2/data (frozen); v2 reads data/v2 + writes V2/data_v2",
+    )
     args = parser.parse_args()
+
+    _set_paths(resolve_data_version(args.data_version))
 
     print("Loading papers + canonical journal_slug (pmid -> papers_distinct join)...")
     papers_topics = load_papers_topics()

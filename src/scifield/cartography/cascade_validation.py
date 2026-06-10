@@ -59,6 +59,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from scifield.cartography.corpus_config import (
+    get_canonical_journal_slugs,
+    resolve_data_version,
+)
+
 if TYPE_CHECKING:
     import pandas as pd
 
@@ -72,6 +77,7 @@ __all__ = [
     "granularity_consistency",
     "heldout_consistency",
     "jackknife_origins",
+    "panel_journals",
     "permutation_verdict",
     "resolvable_topics",
     "run_all_validations",
@@ -93,18 +99,36 @@ HELDOUT_MIN_YEAR: int = 2019
 # ten per-journal seeding scores; reindexing to this fixed panel keeps the spread
 # comparable across permutations (a permutation that empties a journal's score is
 # simply absent from the spread, never imputed).
-PANEL_JOURNALS: tuple[str, ...] = (
-    "ann_surg",
-    "arthroscopy",
-    "br_j_surg",
-    "clin_orthop_relat_res",
-    "j_am_coll_surg",
-    "j_arthroplasty",
-    "j_bone_joint_surg_am",
-    "jama_surg",
-    "spine",
-    "surgery",
-)
+#
+# Sourced from the corpus config (single source of truth) rather than a silent
+# duplicate of the v1 ten. The DEFAULT is deliberately the **v1** roster, so existing
+# validation behaviour/tests are byte-identical; a v2 panel is opt-in via
+# :func:`panel_journals` (or by passing ``panel=`` / ``journals=`` to the verdict
+# functions), never by changing this default.
+PANEL_JOURNALS: tuple[str, ...] = get_canonical_journal_slugs("v1")
+
+
+def panel_journals(version: str | None = None) -> tuple[str, ...]:
+    """The journal panel for a corpus version (defaults to the active version).
+
+    A run-time accessor so a driver can validate a v2 cascade on the v2 panel without
+    mutating the byte-frozen :data:`PANEL_JOURNALS` default. The version resolves via
+    :func:`scifield.cartography.corpus_config.resolve_data_version` (explicit arg >
+    ``$SCIFIELD_DATA_VERSION`` > ``"v1"``).
+
+    Parameters
+    ----------
+    version :
+        Optional explicit corpus version (``"v1"`` / ``"v2"``). Default ``None`` →
+        resolve from the environment, falling back to ``"v1"``.
+
+    Returns
+    -------
+    tuple of str
+        The version's canonical journal slugs (the panel the spread is taken over).
+        ``panel_journals("v1")`` equals :data:`PANEL_JOURNALS`.
+    """
+    return get_canonical_journal_slugs(resolve_data_version(version))
 
 
 # --------------------------------------------------------------------------- #

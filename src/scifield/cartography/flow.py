@@ -54,6 +54,7 @@ Conventions: ``from __future__ import annotations``; numpy-style docstrings; pan
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, cast
 
@@ -71,7 +72,11 @@ __all__ = [
 ]
 
 # The clean ten canonical journal slugs (V2/CONTEXT.md §3). The flow table keys on
-# these; an 11th value means the jama_surg display split leaked in.
+# these; an 11th value means the jama_surg display split leaked in. This literal is
+# the frozen v1 ten (other modules + tests import it); the extensible, config-driven
+# source of truth is :mod:`scifield.cartography.corpus_config` —
+# ``get_canonical_journal_slugs("v1")`` set-equals this tuple, and the v2 (78-journal)
+# roster is read from ``conf/corpus/v2.yaml``.
 CANONICAL_JOURNAL_SLUGS: tuple[str, ...] = (
     "ann_surg",
     "arthroscopy",
@@ -116,42 +121,87 @@ def topic_key_for_grain(grain: str) -> str:
         raise ValueError(f"unknown grain {grain!r}; expected one of {{{valid}}}") from exc
 
 
-def assert_canonical_journals(journals: object) -> None:
-    """Fail loudly if any journal outside the canonical ten appears.
+def assert_canonical_journals(
+    journals: object,
+    *,
+    version: str | None = None,
+    allowed: Iterable[str] | None = None,
+) -> None:
+    """Fail loudly if any journal falls outside the allowed canonical slug set.
 
     A guard the builder (or a test) calls on the input frame's ``journal_slug``
     values to catch the jama_surg display-name split early — if a display string
     ("JAMA surgery", "Archives of surgery ...") ever reaches the flow as a journal
-    key, the count exceeds ten and this raises.
+    key, it is not a known slug and this raises.
+
+    The allowed set is resolved in priority order so a single call site works for
+    **both** a v1 and a v2 cartography run without being edited:
+
+    1. ``allowed`` given → validate membership against exactly that set.
+    2. else ``version`` given, **or** ``$SCIFIELD_DATA_VERSION`` set → validate
+       against that version's canonical roster
+       (:func:`scifield.cartography.corpus_config.get_canonical_journal_slugs`).
+    3. else (the bare ``assert_canonical_journals(df["journal_slug"])`` call with no
+       env) → validate against the **union of all known versions**
+       (:func:`scifield.cartography.corpus_config.all_known_slugs`, the 78). This is
+       permissive enough that a v1 *or* a v2 run passes the unchanged call site, yet
+       still raises on display-name leaks ("JAMA Surg") and truly bogus slugs.
 
     Parameters
     ----------
     journals :
         Any iterable of journal identifiers (typically a ``journal_slug`` Series or
         its unique values). ``NaN`` / ``None`` entries are ignored.
+    version :
+        Optional explicit corpus version (``"v1"`` / ``"v2"``) whose roster bounds
+        the membership check. Overridden by ``allowed``; falls back to
+        ``$SCIFIELD_DATA_VERSION`` then the all-versions union (see above).
+    allowed :
+        Optional explicit set of permitted slugs (highest priority). When given,
+        ``version`` / the env / the union default are ignored.
 
     Raises
     ------
     ValueError
-        If the distinct non-missing values are not a subset of
-        :data:`CANONICAL_JOURNAL_SLUGS`.
+        If the distinct non-missing values are not a subset of the resolved allowed
+        set.
 
     Notes
     -----
-    Pure / no I/O. Only the *membership* is checked; the panel need not be complete
-    (a topic-restricted frame may legitimately omit some slugs).
+    Pure / no I/O beyond the cached corpus-config read. Only the *membership* is
+    checked; the panel need not be complete (a topic-restricted frame may legitimately
+    omit some slugs).
     """
+    from scifield.cartography.corpus_config import (
+        ENV_VAR,
+        all_known_slugs,
+        get_canonical_journal_slugs,
+        resolve_data_version,
+    )
+
+    if allowed is not None:
+        allowed_set = set(allowed)
+        scope = "the provided allowed set"
+    elif version is not None or ENV_VAR in os.environ:
+        resolved = resolve_data_version(version)
+        allowed_set = set(get_canonical_journal_slugs(resolved))
+        scope = f"the canonical {resolved} corpus roster"
+    else:
+        allowed_set = set(all_known_slugs())
+        scope = "any known corpus version (v1 ∪ v2)"
+
     seen = {
         j
         for j in cast(Iterable[object], journals)
         if j is not None and not (isinstance(j, float) and j != j)
     }
-    extra = sorted(str(j) for j in seen - set(CANONICAL_JOURNAL_SLUGS))
+    extra = sorted(str(j) for j in seen - allowed_set)
     if extra:
         raise ValueError(
-            "non-canonical journal(s) in flow input "
-            f"(expected only journal_slug from the clean ten): {extra}. "
-            "Likely the jama_surg display-name split leaked in — key on journal_slug."
+            f"non-canonical journal(s) in flow input (expected only journal_slug from "
+            f"{scope}): {extra}. "
+            "Likely the jama_surg display-name split (a display name, not a slug) leaked "
+            "in, or a bogus slug — key on journal_slug from the active corpus config."
         )
 
 

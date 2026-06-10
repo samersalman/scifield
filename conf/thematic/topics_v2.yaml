@@ -1,0 +1,77 @@
+# =============================================================================
+# SciField V2-S08 — Topic Modelling Pipeline Config (v2 expansion harvest)
+# Faithful copy of conf/thematic/topics.yaml with every v1 data path repointed to
+# the v2 tree (data/v2/...) and the model dir to models/v2/bertopic_v2. All modelling params
+# (random_state, vectorizer, ngram, nr_topics, sweep grid, selector, constraints)
+# are byte-identical to v1. The sweep is left enabled here; the orchestrator turns
+# it off at run time via `--skip-sweep`, not in this config.
+#
+# This config drives the BERTopic-based thematic pipeline:
+#   - Reads embeddings from data/v2/embeddings.parquet and abstracts from the
+#     papers_distinct DuckDB view
+#   - Fits a leaf BERTopic model (UMAP + HDBSCAN + c-TF-IDF), then derives a
+#     hierarchical reduction (leaf -> mid -> top)
+#   - Optionally runs a UMAP/HDBSCAN sweep and picks the best config by NPMI
+#   - Writes topics.parquet, topic_hierarchy.parquet, topic_sweep.parquet, and
+#     persists the fitted BERTopic model under models/v2/bertopic_v2
+#
+# Notes:
+#   - `defaults_config` is named to avoid clashing with Hydra's reserved
+#     `defaults` key. It holds the single TopicConfig used outside the sweep.
+#   - `software:` is a sidecar block populated by the CLI's record_run hook;
+#     leave values as null here.
+# =============================================================================
+
+software:
+  bertopic: null
+  umap-learn: null
+  hdbscan: null
+  gensim: null
+  numpy: null
+
+input:
+  duckdb_path: data/v2/papers.duckdb
+  view: papers_distinct
+  embeddings_parquet: data/v2/embeddings.parquet
+
+output:
+  topics_parquet: data/v2/topics.parquet
+  hierarchy_parquet: data/v2/topic_hierarchy.parquet
+  sweep_parquet: data/v2/topic_sweep.parquet
+  model_dir: models/v2/bertopic_v2
+
+hierarchy:
+  target_mid_levels: 20
+  target_top_levels: 6
+
+coherence:
+  top_n: 10
+  metrics: [c_npmi, c_v]
+
+defaults_config:
+  umap_n_neighbors: 15
+  umap_n_components: 5
+  umap_min_dist: 0.0
+  umap_metric: cosine
+  hdbscan_min_cluster_size: 80
+  hdbscan_min_samples: null
+  hdbscan_cluster_selection_method: eom
+  nr_topics: auto
+  random_state: 42
+  vectorizer_min_df: 10
+  vectorizer_ngram_max: 2
+
+sweep:
+  enabled: true
+  grid:
+    - {umap_n_neighbors: 15, hdbscan_min_cluster_size: 50}
+    - {umap_n_neighbors: 15, hdbscan_min_cluster_size: 80}
+    - {umap_n_neighbors: 15, hdbscan_min_cluster_size: 120}
+    - {umap_n_neighbors: 10, hdbscan_min_cluster_size: 50}
+    - {umap_n_neighbors: 10, hdbscan_min_cluster_size: 80}
+    - {umap_n_neighbors: 10, hdbscan_min_cluster_size: 120}
+  selector: npmi_top10
+  constraints:
+    n_leaf_topics_min: 100
+    n_leaf_topics_max: 200
+    noise_fraction_max: 0.20

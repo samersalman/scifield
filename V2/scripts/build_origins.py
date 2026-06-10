@@ -30,10 +30,12 @@ required and is out of scope for this $0 session).
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import duckdb
 import pandas as pd
+from _path_config import get_paths, resolve_data_version  # V2/scripts sibling helper
 
 from scifield.cartography.origins import (
     COMPANY_TYPE,
@@ -45,16 +47,31 @@ from scifield.cartography.origins import (
 from scifield.repro import record_run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ARCHETYPES = REPO_ROOT / "data/v1/archetypes.parquet"
-PAPER_INST = REPO_ROOT / "data/v1/enrichment/paper_institutions.parquet"
-INSTITUTIONS = REPO_ROOT / "data/v1/enrichment/institutions.parquet"
-REFERENCES_OUT = REPO_ROOT / "data/v1/enrichment/references_out.parquet"
-TOPIC_HIERARCHY = REPO_ROOT / "data/v1/topic_hierarchy.parquet"
-OUT_DIR = REPO_ROOT / "V2/data/origins"
+
+# Data-version-derived paths (default "v1" at import; re-resolved in `main()`).
+_PATHS = get_paths(REPO_ROOT, resolve_data_version())
+ARCHETYPES = _PATHS["ARCHETYPES"]
+PAPER_INST = _PATHS["PAPER_INST"]
+INSTITUTIONS = _PATHS["INSTITUTIONS"]
+REFERENCES_OUT = _PATHS["REFERENCES_OUT"]
+TOPIC_HIERARCHY = _PATHS["TOPIC_HIERARCHY"]
+OUT_DIR = _PATHS["ORIGINS_DIR"]
 
 NOISE_TOPIC_ID = -1
 NOVELTY_COLS = ["sem_nov_mean", "sem_nov_min", "cd5", "cd10"]
 LOW_N_THRESHOLD = 30
+
+
+def _set_paths(version: str) -> None:
+    """Rebind module-level path constants for a resolved data version (see main)."""
+    global ARCHETYPES, PAPER_INST, INSTITUTIONS, REFERENCES_OUT, TOPIC_HIERARCHY, OUT_DIR
+    p = get_paths(REPO_ROOT, version)
+    ARCHETYPES = p["ARCHETYPES"]
+    PAPER_INST = p["PAPER_INST"]
+    INSTITUTIONS = p["INSTITUTIONS"]
+    REFERENCES_OUT = p["REFERENCES_OUT"]
+    TOPIC_HIERARCHY = p["TOPIC_HIERARCHY"]
+    OUT_DIR = p["ORIGINS_DIR"]
 
 
 def load_paper_novelty() -> pd.DataFrame:
@@ -117,6 +134,16 @@ def _write(df: pd.DataFrame, name: str, inputs: dict[str, Path], config: dict) -
 
 def main() -> None:
     """Build + write all four origin tables and print the headline numbers."""
+    parser = argparse.ArgumentParser(description="Build V2 novelty-origin tables.")
+    parser.add_argument(
+        "--data-version",
+        default=None,
+        help="data version (default: $SCIFIELD_DATA_VERSION or 'v1'); "
+        "v1 reads data/v1 + writes V2/data (frozen); v2 reads data/v2 + writes V2/data_v2",
+    )
+    args = parser.parse_args()
+    _set_paths(resolve_data_version(args.data_version))
+
     print("Loading per-paper novelty (archetypes, noise topic dropped)...")
     novelty = load_paper_novelty()
     print(f"  {len(novelty):,} papers; novelty cols = {NOVELTY_COLS}")

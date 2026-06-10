@@ -1,0 +1,32 @@
+# V2-S08 — Embedding config (v2 expansion harvest). Faithful copy of
+# conf/thematic/embed.yaml with data/model paths repointed to data/v2 / models/v2
+# and a research-only publication-type filter added (see input.filter below).
+# The model block + batch_size are byte-identical to v1 so embeddings stay
+# comparable across the v1/v2 corpora.
+#
+# Selected by V1-S05 bake-off (notebooks/03_embedding_bakeoff.ipynb).
+model:
+  name: all-mpnet-base-v2                  # one of: all-mpnet-base-v2 | bge-large-en-v1.5 | nomic-embed-text-v1
+  hf_id: sentence-transformers/all-mpnet-base-v2
+  revision: e8c3b32edf5434bc2275fc9bab85f82640a19130   # bake-off winner (V1-S05); HF commit SHA pinned 2026-05-20
+  max_seq_length: 384
+  normalize: true
+batch_size: 64
+input:
+  duckdb_path: data/v2/papers.duckdb
+  table: papers
+  # Research-only filter: keeps the base 'Journal Article' set and Case Reports,
+  # but excludes the non-research negative set (Editorial, Letter, Comment, News,
+  # Published Erratum, Retraction of Publication, Biography, Obituary). NULL-safe
+  # (papers with no publication_types pass). Lossless — this only gates which rows
+  # are embedded; the raw parquet / DuckDB tables are unchanged.
+  filter: "abstract IS NOT NULL AND length(abstract) > 50 AND (publication_types IS NULL OR NOT (list_contains(publication_types, 'Editorial') OR list_contains(publication_types, 'Letter') OR list_contains(publication_types, 'Comment') OR list_contains(publication_types, 'News') OR list_contains(publication_types, 'Published Erratum') OR list_contains(publication_types, 'Retraction of Publication') OR list_contains(publication_types, 'Biography') OR list_contains(publication_types, 'Obituary')))"
+output:
+  parquet_path: data/v2/embeddings.parquet
+  dtype: float16
+faiss:
+  index_path: data/v2/faiss.index
+  pmid_map_path: data/v2/faiss_pmid_map.parquet
+  M: 32
+  efConstruction: 200
+  efSearch: 64

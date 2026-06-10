@@ -45,9 +45,11 @@ Locked session seed ``20260609`` is used for both the random split and the boots
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import pandas as pd
+from _path_config import get_paths, resolve_data_version  # V2/scripts sibling helper
 
 from scifield.cartography.origins import (
     _attach_paper_attribute,
@@ -58,10 +60,13 @@ from scifield.cartography.origins import (
 from scifield.repro import record_run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ARCHETYPES = REPO_ROOT / "data/v1/archetypes.parquet"
-PAPER_INST = REPO_ROOT / "data/v1/enrichment/paper_institutions.parquet"
-INSTITUTIONS = REPO_ROOT / "data/v1/enrichment/institutions.parquet"
-OUT_DIR = REPO_ROOT / "V2/data/origins"
+
+# Data-version-derived paths (default "v1" at import; re-resolved in `main()`).
+_PATHS = get_paths(REPO_ROOT, resolve_data_version())
+ARCHETYPES = _PATHS["ARCHETYPES"]
+PAPER_INST = _PATHS["PAPER_INST"]
+INSTITUTIONS = _PATHS["INSTITUTIONS"]
+OUT_DIR = _PATHS["ORIGINS_DIR"]
 
 NOISE_TOPIC_ID = -1
 NOVELTY_COLS = ["sem_nov_mean", "cd5"]
@@ -69,6 +74,16 @@ SEED = 20260609
 N_MIN = 30
 N_BOOT = 1000
 CI = 0.95
+
+
+def _set_paths(version: str) -> None:
+    """Rebind module-level path constants for a resolved data version (see main)."""
+    global ARCHETYPES, PAPER_INST, INSTITUTIONS, OUT_DIR
+    p = get_paths(REPO_ROOT, version)
+    ARCHETYPES = p["ARCHETYPES"]
+    PAPER_INST = p["PAPER_INST"]
+    INSTITUTIONS = p["INSTITUTIONS"]
+    OUT_DIR = p["ORIGINS_DIR"]
 
 
 def load_paper_novelty() -> pd.DataFrame:
@@ -130,6 +145,16 @@ def _write(df: pd.DataFrame, name: str, inputs: dict[str, Path], config: dict) -
 
 def main() -> None:
     """Compute + write the geography and sector robustness tables; print them."""
+    parser = argparse.ArgumentParser(description="Build V2-S06b novelty-origin robustness tables.")
+    parser.add_argument(
+        "--data-version",
+        default=None,
+        help="data version (default: $SCIFIELD_DATA_VERSION or 'v1'); "
+        "v1 reads data/v1 + writes V2/data (frozen); v2 reads data/v2 + writes V2/data_v2",
+    )
+    args = parser.parse_args()
+    _set_paths(resolve_data_version(args.data_version))
+
     print("Loading per-paper novelty + year (archetypes, noise topic dropped)...")
     novelty = load_paper_novelty()
     print(f"  {len(novelty):,} papers; novelty cols = {NOVELTY_COLS}")

@@ -670,6 +670,21 @@ def topics(
         "--limit",
         help="Smoke-test cap: use only the first N deduped (pmid, embedding) rows.",
     ),
+    assign_mode: str = typer.Option(
+        "full",
+        "--assign-mode",
+        help=(
+            "Assignment strategy. 'full' (default) = v1 behavior: fit UMAP+HDBSCAN on "
+            "every row (byte-reproducible). 'subsample' (V2 scaling fix) = fit on "
+            "--subsample-n rows, then assign all points via approximate_predict; "
+            "implies a single fit (no sweep) and requires --skip-sweep."
+        ),
+    ),
+    subsample_n: int = typer.Option(
+        200000,
+        "--subsample-n",
+        help="Rows to fit on when --assign-mode subsample (ignored for 'full').",
+    ),
 ) -> None:
     """Fit the V1-S06 BERTopic pipeline (V1-S06)."""
     import importlib.metadata as _im
@@ -688,7 +703,20 @@ def topics(
         tokenise_for_coherence,
     )
     from scifield.thematic import sweep as run_sweep
-    from scifield.thematic.topics import TopicConfig
+    from scifield.thematic.topics import TopicConfig, fit_subsample_assign_all
+
+    assign_mode = assign_mode.strip().lower()
+    if assign_mode not in {"full", "subsample"}:
+        typer.echo(f"ERROR: --assign-mode must be 'full' or 'subsample'; got {assign_mode!r}")
+        raise typer.Exit(code=1)
+    if assign_mode == "subsample" and not skip_sweep:
+        # Subsample assign is a single fit by construction; a sweep would
+        # re-fit per config on the full matrix, defeating the scaling fix.
+        typer.echo(
+            "ERROR: --assign-mode subsample requires --skip-sweep "
+            "(subsample assign is a single fit, not a sweep)."
+        )
+        raise typer.Exit(code=1)
 
     cfg = _load_topics_config(config)
     repo_root = Path(__file__).resolve().parents[2]
@@ -862,9 +890,23 @@ def topics(
         typer.echo("sweep skipped; using defaults_config")
         chosen_cfg = TopicConfig(**defaults_dict)
 
-    typer.echo(f"fitting final model on {len(documents)} documents")
     t_fit_start = time.perf_counter()
-    model = fit_topics(embeddings, documents, chosen_cfg)
+    if assign_mode == "subsample":
+        eff_subsample_n = min(int(subsample_n), len(documents))
+        typer.echo(
+            f"assign_mode=subsample: fitting on {eff_subsample_n} of {len(documents)} "
+            f"documents, then approximate_predict-assigning all "
+            f"(subsample_n={subsample_n}, seed=cfg.random_state={chosen_cfg.random_state})"
+        )
+        model, _sub_topics, _sub_probs = fit_subsample_assign_all(
+            embeddings,
+            documents,
+            chosen_cfg,
+            subsample_n=int(subsample_n),
+        )
+    else:
+        typer.echo(f"assign_mode=full: fitting final model on {len(documents)} documents")
+        model = fit_topics(embeddings, documents, chosen_cfg)
     fit_wall = time.perf_counter() - t_fit_start
 
     t_hier_start = time.perf_counter()
@@ -975,6 +1017,12 @@ def topics(
         "skip_sweep": bool(skip_sweep),
         "limit": int(limit) if limit is not None else None,
     }
+    # Provenance for the V2 scaling path. Added only in subsample mode so the
+    # default (full) sidecar stays byte-identical to v1.
+    if assign_mode == "subsample":
+        sidecar_config["assign_mode"] = assign_mode
+        sidecar_config["subsample_n"] = int(subsample_n)
+        sidecar_config["subsample_seed"] = int(chosen_cfg.random_state)
 
     sidecar_inputs = {
         "papers_duckdb": duckdb_path,

@@ -39,14 +39,26 @@ import time
 from pathlib import Path
 
 import pandas as pd
+from _path_config import get_paths, resolve_data_version  # V2/scripts sibling helper
 
 from scifield.cartography import cascade_validation as cv
 from scifield.cartography.flow import topic_key_for_grain
 from scifield.repro import record_run
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FLOW_DIR = REPO_ROOT / "V2/data/flow"
-OUT_DIR = REPO_ROOT / "V2/data/cascade"
+
+# Data-version-derived paths (default "v1" at import; re-resolved in `main()`).
+_PATHS = get_paths(REPO_ROOT, resolve_data_version())
+FLOW_DIR = _PATHS["FLOW_DIR"]
+OUT_DIR = _PATHS["CASCADE_DIR"]
+
+
+def _set_paths(version: str) -> None:
+    """Rebind module-level path constants for a resolved data version (see main)."""
+    global FLOW_DIR, OUT_DIR
+    p = get_paths(REPO_ROOT, version)
+    FLOW_DIR = p["FLOW_DIR"]
+    OUT_DIR = p["CASCADE_DIR"]
 
 
 def load_flow(grain: str) -> pd.DataFrame:
@@ -301,7 +313,15 @@ def main() -> None:
         default=None,
         help="optional smaller perm count for secondary Method-B cells (default: same as --n-perm)",
     )
+    parser.add_argument(
+        "--data-version",
+        default=None,
+        help="data version (default: $SCIFIELD_DATA_VERSION or 'v1'); "
+        "v1 reads/writes V2/data (frozen); v2 reads data/v2 + writes V2/data_v2",
+    )
     args = parser.parse_args()
+
+    _set_paths(resolve_data_version(args.data_version))
 
     if args.n_perm != cv.N_PERM or args.seed != cv.SEED:
         print(
