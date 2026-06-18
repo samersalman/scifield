@@ -601,12 +601,13 @@ def faiss_build(
     # Try the fast FixedSizeList path first; fall back to per-element conversion.
     arr: np.ndarray
     try:
-        chunks = []
-        for chunk in embedding_col.chunks:
-            values = chunk.values.to_numpy(zero_copy_only=False).astype(np.float32, copy=False)
-            list_size = chunk.type.list_size  # FixedSizeList only
-            chunks.append(values.reshape(-1, list_size))
-        arr = np.concatenate(chunks, axis=0) if len(chunks) > 1 else chunks[0]
+        # combine_chunks() + flatten() respects per-chunk offsets; reading
+        # chunk.values returns the full shared buffer per chunk, so a multi-chunk
+        # FixedSizeList (parquet > 131072 rows) yields n_chunks x rows.
+        arr_col = embedding_col.combine_chunks()
+        list_size = arr_col.type.list_size  # FixedSizeList only
+        flat = arr_col.flatten().to_numpy(zero_copy_only=False).astype(np.float32, copy=False)
+        arr = flat.reshape(len(arr_col), list_size)
     except (AttributeError, TypeError):
         # Generic LIST<...> fallback: convert per row.
         py_lists = embedding_col.to_pylist()

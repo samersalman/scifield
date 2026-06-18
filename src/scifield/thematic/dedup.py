@@ -147,13 +147,15 @@ def _embedding_chunks_to_array(embedding_col) -> np.ndarray:
     a FixedSizeList of fp16/fp32 values flattens via ``values.to_numpy``,
     while a generic LIST<...> requires per-row materialisation.
     """
-    chunks: list[np.ndarray] = []
     try:
-        for chunk in embedding_col.chunks:
-            values = chunk.values.to_numpy(zero_copy_only=False).astype(np.float32, copy=False)
-            list_size = chunk.type.list_size
-            chunks.append(values.reshape(-1, list_size))
-        return np.concatenate(chunks, axis=0) if len(chunks) > 1 else chunks[0]
+        # combine_chunks() + flatten() respects per-chunk offsets. Iterating the
+        # chunks and reading ``chunk.values`` returns the FULL shared values buffer
+        # for every chunk, so a multi-chunk FixedSizeList column (any parquet with
+        # > 131072 rows, e.g. the v2 corpus) yields n_chunks x rows.
+        arr_col = embedding_col.combine_chunks()
+        list_size = arr_col.type.list_size
+        flat = arr_col.flatten().to_numpy(zero_copy_only=False).astype(np.float32, copy=False)
+        return flat.reshape(len(arr_col), list_size)
     except (AttributeError, TypeError):
         py_lists = embedding_col.to_pylist()
         return np.asarray(py_lists, dtype=np.float32)
