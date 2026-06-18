@@ -2,8 +2,10 @@
 # SciField V2-S08 — Topic Modelling Pipeline Config (v2 expansion harvest)
 # Faithful copy of conf/thematic/topics.yaml with every v1 data path repointed to
 # the v2 tree (data/v2/...) and the model dir to models/v2/bertopic_v2. All modelling params
-# (random_state, vectorizer, ngram, nr_topics, sweep grid, selector, constraints)
-# are byte-identical to v1. The sweep is left enabled here; the orchestrator turns
+# (random_state, vectorizer, ngram, sweep grid, selector, constraints) are byte-identical
+# to v1, except `nr_topics` (150) and `hdbscan_min_samples` (10), which adopt v1's phase-2
+# retune (conf/thematic/topics_retune_phase2.yaml): `auto` collapses topics at v2 scale,
+# raising sklearn's c-TF-IDF min_df ValueError. The sweep is left enabled here; the orchestrator turns
 # it off at run time via `--skip-sweep`, not in this config.
 #
 # This config drives the BERTopic-based thematic pipeline:
@@ -54,9 +56,9 @@ defaults_config:
   umap_min_dist: 0.0
   umap_metric: cosine
   hdbscan_min_cluster_size: 80
-  hdbscan_min_samples: null
+  hdbscan_min_samples: 10  # v1 phase-2 retune companion (was null)
   hdbscan_cluster_selection_method: eom
-  nr_topics: auto
+  nr_topics: 150  # pinned: 'auto' collapses topics at v2 scale -> sklearn c-TF-IDF min_df ValueError (v1 phase-2 fix)
   random_state: 42
   vectorizer_min_df: 10
   vectorizer_ngram_max: 2
