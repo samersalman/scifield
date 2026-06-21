@@ -1,0 +1,32 @@
+{
+  "config": {
+    "artifact": "map_v0_v2/index.html",
+    "data_version": "v2",
+    "grain": "leaf",
+    "left_censoring_1995": "early topics originate at the 1995 panel start",
+    "n_journals": 78,
+    "panel_conditional": "origins are first-in-panel, not first in world",
+    "renderer": "plotly static HTML (CDN script), no server (streamlit/dash absent)",
+    "task": "V2-S09"
+  },
+  "config_hash": "85fa7ddeaf19ae167a2cec65a330b5c11ae5560eb47848e30ba897551313df96",
+  "git_dirty": true,
+  "git_sha": "b12de2fc5b258b7c472a9742c4d32d13f32d0db8",
+  "input_hashes": {
+    "diffusion_curves": "c27c645ceaeb2ac880a5bdc0e73e7341fc8f12c53da93e33be0dba3b069aae9f",
+    "geo_novelty": "dbbfad25a51018185987865b2411423255271be7072e512577081f9eec334be9",
+    "lag_matrix": "050e30884fe7068f24d34d6d44a97d2461c2c5d4f209eab28d0c64a4cb503d71",
+    "origin_attribution": "db1665d5f2d9b7f049f2d0465530e2453bd0ea2cc555467f5eb8069c03ffbbe6",
+    "recombination_by_topic": "28abca9e1ce55141fb2564921575171b81a9bdff3789c58514bfb8736c66f3ca",
+    "role_scores": "cdb4f59cea7e1168e9c803b14361873f518393daf480a9e790de0dd0c01536b2",
+    "sector_novelty": "36075b627b7f723b7e07636fc06e180e49d5dfc72b5fc9ba6d167a6fe7154965",
+    "topic_hierarchy": "3358f6053a3b9968101661556af0e263c204984e7e5eb7190d074548b1c42e16",
+    "velocity": "d42c588ed0d58b906cb93ade36bdf9efcddafc350f24c6bc33b96436ed6782ca"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-21T18:59:41.783251+00:00"
+}
