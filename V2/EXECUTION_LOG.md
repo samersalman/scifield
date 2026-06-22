@@ -522,3 +522,44 @@ _status: SIGNED PASS by Samer Salman, 2026-06-09_
   — build an old↔new topic crosswalk, not "more rows through the same topics"); log spend in
   `docs/operations/api_costs.md`. Then V2-S09 re-runs cartography at scale (key test: do the source
   generalists actually show up as sources, and do they change the specialty-topic origin attributions?).
+
+---
+
+## V2-S10 — Trajectory / "future" layer
+_status: COMMITTED & GREEN 2026-06-21_
+
+- **What:** added the missing *future* dimension to the V2 cartography — an honest, **descriptive**
+  per-topic trajectory projection with uncertainty bands. Headline metric = topic **share** of annual
+  assigned output (removes the corpus-growth confound); raw **volume** kept as a secondary read. This
+  is **explicitly NOT a predictive claim and NOT the dead F3 GNN** (F3 = emergence classifier, signed
+  **NULL** at Gate G4: sealed test AUC **0.781** < no-graph **0.804**, H1 FAIL). No
+  `src/scifield/forecasting/*` reuse — fresh descriptive layer.
+- **Method:** per-topic **state-space local-linear-trend** (`statsmodels UnobservedComponents`), fit on
+  `logit(share)` / `log(volume)` then back-transformed `conf_int(alpha=1−ci_level)` bands; deterministic
+  **log/logit-linear fallback** for short or non-converging series. `ci_level=0.80`, horizon **+5y to 2030**,
+  **leaf** grain. Fit window **1995–2025**; **2026 is a partial harvest year (~3,872 papers vs ~28k/yr) and
+  is EXCLUDED from fitting** — it surfaces only as the first projected year. `topic_id == -1` excluded from
+  both the numerator and the share denominator.
+- **Code/artifacts:** `scifield.cartography.trajectory` (pure; public surface
+  `build_topic_year_series` + `fit_trajectories`) · `V2/scripts/build_trajectory.py` ·
+  `V2/notebooks/v2_05_trajectories.ipynb` (executed headless, 0 errors; 4 figures
+  `figures/v2_05_{fanchart_grid,fan_rising,fan_falling,share_vs_volume}.png`) ·
+  `V2/docs/cartography/trajectories.md` (methods doc). Outputs
+  `V2/data_v2/trajectory/{trajectory_series,trajectory_summary}.parquet` (+ `.run.json` sidecars,
+  `record_run` config `task="V2-S10"`, `ci_level=0.8`, `horizon=5`, `max_complete_year=2025`,
+  `model="state_space_llt+loglinear_fallback"`; `input_hashes` verified against the live
+  `archetypes.parquet` / `topic_hierarchy.parquet`).
+- **ACTUAL numbers (data-version v2; 802,139 papers; 149 leaf topics):** **149/149 `fit_ok`**; model
+  split **state_space_llt=146 / loglinear_fallback=3**; direction **flat=81 / falling=38 / rising=30**;
+  series table **5,352 rows = 4,607 observed (1995–2025) + 745 projected (2026–2030, = 149 topics × 5-yr horizon)**.
+  - **Rising (slope share/yr, illustrative):** topic 2 *health/information/data/care/digital*
+    **+0.00331** (`last_obs` 0.139 → `proj2030` 0.155); topic 13 *covid19/influenza/sarscov2* **+0.00133**
+    (0.020 → 0.027); topic 0 *knee/cartilage/acl/ligament* **+0.00132**; topic 72 *opioid/pain* **+0.00033**.
+  - **Falling (slope share/yr, illustrative):** topic 10 *coronary/heart/myocardial/cardiac* **−0.00080**;
+    topic 32 *sepsis/shock/septic* **−0.00070**; topic 9 *renal/kidney/glomerular* **−0.00063**;
+    topic 7 *dna/rna/transcription* **−0.00054**.
+- **Tests/gates:** `tests/test_cartography_trajectory.py` **17 passed**; full suite green;
+  `nbconvert --execute` of `v2_05_trajectories.ipynb` runs clean (0 errors, 4 figures);
+  ruff/black/mypy (pre-commit) green. **$0** — local CPU on existing tables, no DeepSeek/API.
+- This is V2 **Phase F–G** work, continuing after the V2-S08 expansion harvest (1.49M papers / 78
+  journals) and the V2-S09 scaled cartography re-run (logged via commits + findings docs, not in this file).
