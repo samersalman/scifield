@@ -1,6 +1,12 @@
 # SciField
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20360022.svg)](https://doi.org/10.5281/zenodo.20360022)
+<!-- DOI badge: replace ZENODO_DOI after the v0.2.0 release is published (see docs/cartography/reproduce.md §6). Do NOT fabricate a DOI before it is minted. -->
+[![Cartography DOI (v0.2.0)](https://img.shields.io/badge/Cartography%20DOI%20%28v0.2.0%29-TODO%3A%20mint%20on%20release-lightgrey)](https://github.com/samersalman/scifield/tree/main/V2/data_v2)
+
+**Live map (V2 cartography):** an interactive [literature cartography](https://samersalman.github.io/scifield/cartography/)
+of contemporary science — open the [interactive map](https://samersalman.github.io/scifield/cartography/map/)
+directly, or read the [tab-by-tab guide](https://samersalman.github.io/scifield/cartography/using-the-map/).
 
 SciField is a multi-axis framework for monitoring the health of a scientific
 field. It builds a longitudinal corpus from a defined set of journals,

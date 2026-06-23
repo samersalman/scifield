@@ -1,0 +1,20 @@
+{
+  "config": {
+    "axis": "recombination",
+    "metric": "distinct_topics+entropy",
+    "task": "V2-S06"
+  },
+  "config_hash": "30534a7825cdf4e81b4c33bc48c11519a9ad064bbda99aa52d1b5a8e553150df",
+  "git_dirty": true,
+  "git_sha": "b12de2fc5b258b7c472a9742c4d32d13f32d0db8",
+  "input_hashes": {
+    "archetypes": "09b497a791b3b511a62cde1e0ec366d7edc9e74de7974c33d7f533642c084114",
+    "references_out": "5c2de9e49ea956da8e233261e4b06d11479e9fd286275aea8e642e89378f14cb"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-21T15:54:11.504448+00:00"
+}

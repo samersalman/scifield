@@ -1,0 +1,38 @@
+{
+  "config": {
+    "censoring": "all-topics vs resolvable subset (>=2 distinct first-years) reported; 1995 origin = present at panel start, not born 1995",
+    "n_perm": 1000,
+    "null_1": "journal-label shuffle within topic (primary)",
+    "null_2": "first-appearance-year shuffle within topic (secondary)",
+    "overall_verdict": {
+      "cascade_verdict": "REAL",
+      "method_c_pass": true,
+      "method_d_verdict": "PASS",
+      "primary_s1_null1_verdicts": {
+        "leaf/all": "PASS",
+        "leaf/resolvable": "PASS",
+        "mid/all": "PASS",
+        "mid/resolvable": "PASS"
+      },
+      "rationale": "S1/Null-1 PASSes at both grains and on the resolvable subset; origin jackknife PASSes; granularity holds"
+    },
+    "seed": 20260609,
+    "stat_s1": "seeding-score spread (std across 10 journals, primary)",
+    "stat_s2": "net directed lead-lag asymmetry (secondary)",
+    "table": "null_results",
+    "task": "V2-S04"
+  },
+  "config_hash": "1f3f7a84e1c9693111dca229fff89c6cd6ade91876fb9b74e4ecae20062bd8f2",
+  "git_dirty": true,
+  "git_sha": "b12de2fc5b258b7c472a9742c4d32d13f32d0db8",
+  "input_hashes": {
+    "flow_leaf": "a967a056f2695dc4ffd28155b5124e4f1e09388689abc0c3812fd3215254314e",
+    "flow_mid": "d2b1a42f07724f1994499bc8f73620877efa98dc8cf36781d25f5787ae706768"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-21T16:01:52.419005+00:00"
+}

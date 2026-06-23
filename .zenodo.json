@@ -1,7 +1,8 @@
 {
-  "title": "SciField — A multi-axis framework for monitoring scientific field health",
-  "description": "SciField is a multi-axis framework for monitoring the health of a scientific field. It builds a longitudinal corpus from a defined set of journals, enriches each article with thematic, epistemic, and novelty signals, and uses those signals to forecast where a field is headed. Release v0.1.0 ships the corpus harvester, enrichment pipeline (OpenAlex / Semantic Scholar / ROR / author disambiguation), embedding bake-off, FAISS HNSW index, BERTopic thematic backbone (V1-S06), and the epistemic-extraction scaffolding (V1-S07) with its OSF pre-registration #1.",
-  "version": "0.1.0",
+  "title": "SciField — 78-journal literature cartography of surgery (V2 cartography release)",
+  "description": "SciField is a framework for monitoring and mapping the health and movement of a scientific field. This V2 cartography release maps the surgical literature across a 78-journal panel built on a 1.49M-paper corpus (V2-S08 harvest). It ships the scaled cartography layers (V2-S09): a topic landscape (149 leaf topics over a leaf→mid→top hierarchy), journal-to-journal cascade lead–lag diffusion, source / bridge / terminal journal roles, and novelty origins by institution sector and country; plus a descriptive per-topic trajectory layer (V2-S10) projecting share and volume +5 years to 2030 with 80% uncertainty bands (descriptive extrapolation, not a forecast); plus an interactive static 5-tab map. The exploratory-cartography track passed Gate G6 (2026-06-09). The deposit redistributes the derived cartography tables (~1.7 MB) and the static map; the raw 1.49M-paper corpus is not redistributed but is reproducible from the pipeline in the repository. See docs/cartography/data-dictionary.md for the table-by-table data dictionary and the panel-conditional / 1995-left-censored / descriptive-projection caveats.",
+  "version": "0.2.0",
+  "publication_date": "2026-06-22",
   "upload_type": "software",
   "language": "eng",
   "license": "Apache-2.0",
@@ -14,16 +15,17 @@
     }
   ],
   "keywords": [
+    "literature-cartography",
+    "science-mapping",
+    "knowledge-diffusion",
+    "topic-trajectories",
+    "surgery",
     "scientometrics",
     "bibliometrics",
     "scientific-field-monitoring",
     "topic-modeling",
     "bertopic",
-    "epistemic-quality",
-    "pubmed",
-    "orthopedic-surgery",
-    "llm-extraction",
-    "pre-registration"
+    "pubmed"
   ],
   "related_identifiers": [
     {

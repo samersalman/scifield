@@ -248,6 +248,87 @@ def load_lag_matrix(
     return df[df["grain"] == grain].drop(columns=["grain"]).reset_index(drop=True)
 
 
+def load_trajectory_summary(
+    grain: str = "leaf", *, repo_root: Path | None = None, data_version: str | None = None
+) -> pd.DataFrame:
+    """Load the per-topic trajectory summary (one projected horizon row per topic).
+
+    The trajectory layer (V2-S10) is a **descriptive** per-topic state-space projection:
+    a local-linear-trend on ``logit(share)`` / ``log(volume)`` fitted on 1995&ndash;2025
+    and extrapolated +5y to the horizon year (2030) with 80% uncertainty bands. It is
+    explicitly *not* a predictive/causal forecast. Only the ``"leaf"`` grain exists.
+
+    Parameters
+    ----------
+    grain :
+        ``"leaf"`` or ``"mid"`` (only ``"leaf"`` is materialised for trajectories).
+    repo_root :
+        Repo root override.
+    data_version :
+        Data version selecting the artifact root. Defaults to
+        ``$SCIFIELD_DATA_VERSION`` then ``"v1"`` (→ frozen ``V2/data``).
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns ``[topic_id, label, size, n_years_observed, last_obs_year,
+        last_obs_share, model, slope_share_per_yr, direction, horizon_year, proj_share,
+        proj_share_lo, proj_share_hi, proj_volume, proj_volume_lo, proj_volume_hi,
+        fit_ok]`` for the requested grain (the ``grain`` column is dropped). ``label``
+        carries the topic top-words, so no topic-hierarchy join is needed. ``direction``
+        is one of ``rising`` / ``flat`` / ``falling``.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the trajectory artifact is missing (e.g. v1, which has no trajectory layer).
+    """
+    _check_grain(grain)
+    version = _resolve_version(data_version)
+    path = _resolve_out(repo_root, version, "trajectory", "trajectory_summary.parquet")
+    df = pd.read_parquet(path)
+    return df[df["grain"] == grain].drop(columns=["grain"]).reset_index(drop=True)
+
+
+def load_trajectory_series(
+    grain: str = "leaf", *, repo_root: Path | None = None, data_version: str | None = None
+) -> pd.DataFrame:
+    """Load the per-topic-per-year trajectory series (observed + projected share/volume).
+
+    The companion long table to :func:`load_trajectory_summary`: one row per topic-year,
+    with ``kind`` distinguishing ``observed`` (1995&ndash;2025; ``_lo``/``_hi`` bands are
+    NaN) from ``projected`` (the +5y horizon rows that carry the 80% uncertainty band).
+    Only the ``"leaf"`` grain exists.
+
+    Parameters
+    ----------
+    grain :
+        ``"leaf"`` or ``"mid"`` (only ``"leaf"`` is materialised for trajectories).
+    repo_root :
+        Repo root override.
+    data_version :
+        Data version selecting the artifact root. Defaults to
+        ``$SCIFIELD_DATA_VERSION`` then ``"v1"`` (→ frozen ``V2/data``).
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns ``[topic_id, year, kind, share, share_lo, share_hi, volume, volume_lo,
+        volume_hi]`` for the requested grain (the ``grain`` column is dropped). ``kind``
+        is ``observed`` / ``projected``; ``observed`` rows have NaN ``_lo``/``_hi``.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the trajectory artifact is missing (e.g. v1, which has no trajectory layer).
+    """
+    _check_grain(grain)
+    version = _resolve_version(data_version)
+    path = _resolve_out(repo_root, version, "trajectory", "trajectory_series.parquet")
+    df = pd.read_parquet(path)
+    return df[df["grain"] == grain].drop(columns=["grain"]).reset_index(drop=True)
+
+
 def lag_matrix_wide(
     grain: str = "leaf", *, repo_root: Path | None = None, data_version: str | None = None
 ) -> pd.DataFrame:

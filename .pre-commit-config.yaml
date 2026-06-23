@@ -8,6 +8,9 @@ repos:
       - id: check-toml
       - id: check-added-large-files
         args: [--maxkb=1000]
+        # The V2 cartography map is an intentional self-contained static artifact
+        # (~1.2 MB inline Plotly) committed for GitHub Pages + the Zenodo source archive.
+        exclude: '^(docs/cartography/map/index\.html|V2/map_v0_v2/index\.html)$'
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.6.9
     hooks:

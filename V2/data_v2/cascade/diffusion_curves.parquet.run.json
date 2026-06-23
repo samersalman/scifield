@@ -1,0 +1,25 @@
+{
+  "config": {
+    "grains": [
+      "leaf",
+      "mid"
+    ],
+    "panel_conditional": "origin = first within the 10-journal panel, not first in the world",
+    "table": "diffusion_curves",
+    "task": "V2-S03",
+    "tie_break": "alphabetically-first co-earliest journal_slug"
+  },
+  "config_hash": "608e16e841caf9d18fd71f8148d6f2d967ac5c75d617d40d56c7b4677224338c",
+  "git_dirty": true,
+  "git_sha": "b12de2fc5b258b7c472a9742c4d32d13f32d0db8",
+  "input_hashes": {
+    "flow_leaf": "a967a056f2695dc4ffd28155b5124e4f1e09388689abc0c3812fd3215254314e",
+    "flow_mid": "d2b1a42f07724f1994499bc8f73620877efa98dc8cf36781d25f5787ae706768"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-21T15:49:20.774626+00:00"
+}

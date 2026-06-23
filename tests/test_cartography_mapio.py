@@ -200,3 +200,102 @@ def test_topic_landscape_frame_rejects_mid() -> None:
     """The landscape frame is leaf-only (topic words live at leaf grain)."""
     with pytest.raises(ValueError):
         mapio.topic_landscape_frame("mid")
+
+
+# --------------------------------------------------------------------------- trajectory loaders
+#
+# The trajectory layer (V2-S10) is materialised ONLY for data version ``v2`` at
+# ``V2/data_v2/trajectory/*.parquet`` (v1 has no trajectory layer). So every loader test
+# below passes ``data_version="v2"`` explicitly and skip-guards on the v2 artifact path.
+
+_TRAJ_SUMMARY = "V2/data_v2/trajectory/trajectory_summary.parquet"
+_TRAJ_SERIES = "V2/data_v2/trajectory/trajectory_series.parquet"
+
+#: Columns the trajectory-summary loader is contracted to return (grain dropped, label kept).
+_TRAJ_SUMMARY_COLS = {
+    "topic_id",
+    "label",
+    "size",
+    "n_years_observed",
+    "last_obs_year",
+    "last_obs_share",
+    "model",
+    "slope_share_per_yr",
+    "direction",
+    "horizon_year",
+    "proj_share",
+    "proj_share_lo",
+    "proj_share_hi",
+    "proj_volume",
+    "proj_volume_lo",
+    "proj_volume_hi",
+    "fit_ok",
+}
+
+#: Columns the trajectory-series loader is contracted to return (grain dropped).
+_TRAJ_SERIES_COLS = {
+    "topic_id",
+    "year",
+    "kind",
+    "share",
+    "share_lo",
+    "share_hi",
+    "volume",
+    "volume_lo",
+    "volume_hi",
+}
+
+
+def test_load_trajectory_summary_columns_and_directions() -> None:
+    """Summary has the contracted columns, drops grain, is unique-per-topic and bool fit_ok."""
+    if not _has(*_TRAJ_SUMMARY.split("/")):
+        pytest.skip("v2 trajectory_summary.parquet not present")
+    df = mapio.load_trajectory_summary("leaf", data_version="v2")
+    assert set(df.columns) >= _TRAJ_SUMMARY_COLS
+    assert "grain" not in df.columns
+    assert df["topic_id"].is_unique
+    assert len(df) > 0
+    assert set(df["direction"]) <= {"rising", "flat", "falling"}
+    assert df["fit_ok"].dtype == bool
+
+
+def test_load_trajectory_series_columns_and_kinds() -> None:
+    """Series has the contracted columns; observed vs projected split + NaN bands hold."""
+    if not _has(*_TRAJ_SERIES.split("/")):
+        pytest.skip("v2 trajectory_series.parquet not present")
+    df = mapio.load_trajectory_series("leaf", data_version="v2")
+    assert set(df.columns) >= _TRAJ_SERIES_COLS
+    assert "grain" not in df.columns
+    assert len(df) > 0
+    assert set(df["kind"]) == {"observed", "projected"}
+    observed = df[df["kind"] == "observed"]
+    projected = df[df["kind"] == "projected"]
+    # The projection extends past the last observed year (to the 2030 horizon).
+    assert int(projected["year"].max()) == 2030
+    assert int(projected["year"].max()) > int(observed["year"].max())
+    # Observed rows carry no uncertainty band (the band is a projection-only artefact).
+    assert observed["share_lo"].isna().all()
+
+
+def test_load_trajectory_summary_raises_when_absent(tmp_path) -> None:
+    """An empty repo root (no artifact) raises FileNotFoundError, not a cryptic error."""
+    with pytest.raises(FileNotFoundError):
+        mapio.load_trajectory_summary("leaf", repo_root=tmp_path, data_version="v2")
+
+
+def test_load_trajectory_series_raises_when_absent(tmp_path) -> None:
+    """An empty repo root (no artifact) raises FileNotFoundError for the series loader too."""
+    with pytest.raises(FileNotFoundError):
+        mapio.load_trajectory_series("leaf", repo_root=tmp_path, data_version="v2")
+
+
+def test_load_trajectory_summary_rejects_bad_grain() -> None:
+    """A bogus grain token is rejected up front (before any I/O) with ValueError."""
+    with pytest.raises(ValueError):
+        mapio.load_trajectory_summary("bogus", data_version="v2")
+
+
+def test_load_trajectory_series_rejects_bad_grain() -> None:
+    """A bogus grain token is rejected up front (before any I/O) with ValueError."""
+    with pytest.raises(ValueError):
+        mapio.load_trajectory_series("bogus", data_version="v2")

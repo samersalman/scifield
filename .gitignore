@@ -29,3 +29,9 @@ data/v1/enrichment/cache/cited_by/
 .env
 .env.local
 .env.*.local
+
+# V2-S11 cartography public deposit — derived tables only (~1.7 MB). See docs/cartography/data-dictionary.md.
+# Scoped negation: un-ignores only the small derived parquets under V2/data_v2/** (named data_v2,
+# so the `data/` rule above does NOT cover it). The gigabyte raw artifacts live under data/v2/ and
+# stay ignored. .DS_Store stays ignored (.DS_Store rule has no negation).
+!V2/data_v2/**/*.parquet

@@ -6,10 +6,11 @@
     "left_censoring_1995": "early topics originate at the 1995 panel start",
     "n_journals": 78,
     "panel_conditional": "origins are first-in-panel, not first in world",
+    "published_to": "docs/cartography/map",
     "renderer": "plotly static HTML (CDN script), no server (streamlit/dash absent)",
     "task": "V2-S09"
   },
-  "config_hash": "85fa7ddeaf19ae167a2cec65a330b5c11ae5560eb47848e30ba897551313df96",
+  "config_hash": "77c388a58df45ce911805d8a655ada5c2e43b5626723da4439589f14617c1928",
   "git_dirty": true,
   "git_sha": "260db51af08e4059c70f32a4f85d71433ae54689",
   "input_hashes": {
@@ -30,5 +31,5 @@
     "python": "3.11.15",
     "scifield": "0.0.1"
   },
-  "timestamp": "2026-06-23T01:12:20.437298+00:00"
+  "timestamp": "2026-06-23T01:12:20.470302+00:00"
 }

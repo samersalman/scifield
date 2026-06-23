@@ -21,6 +21,8 @@ b. **Cascade flows** — the inter-journal lead-lag heatmap, the directed seedin
    (nodes coloured by role), and the corpus adoption-by-breadth curve.
 c. **Journal roles** — source/bridge/terminal component bars + citational-velocity bars.
 d. **Novelty origins** — sector novelty, geography ranking, and the top recombinant topics.
+e. **Trajectories** (v2 only) — descriptive per-topic state-space +5y share projections:
+   direction counts, the biggest rising/falling movers, and an all-topic dropdown explorer.
 
 Usage
 -----
@@ -58,9 +60,13 @@ PLOTLY_KW = {"full_html": False, "include_plotlyjs": False, "default_height": "5
 
 
 def _inputs(version: str) -> dict[str, Path]:
-    """Provenance inputs for the record_run sidecar, routed to the active version."""
+    """Provenance inputs for the record_run sidecar, routed to the active version.
+
+    The two trajectory parquets (V2-S10) are added only when present on disk so the v1
+    prove-phase build (no trajectory layer) records the same input set as before.
+    """
     out = REPO_ROOT / ("V2/data" if version == "v1" else f"V2/data_{version}")
-    return {
+    inputs = {
         "topic_hierarchy": REPO_ROOT / "data" / version / "topic_hierarchy.parquet",
         "lag_matrix": out / "cascade/lag_matrix.parquet",
         "origin_attribution": out / "cascade/origin_attribution.parquet",
@@ -71,6 +77,12 @@ def _inputs(version: str) -> dict[str, Path]:
         "geo_novelty": out / "origins/geo_novelty.parquet",
         "recombination_by_topic": out / "origins/recombination_by_topic.parquet",
     }
+    traj_summary = out / "trajectory/trajectory_summary.parquet"
+    traj_series = out / "trajectory/trajectory_series.parquet"
+    if traj_summary.exists() and traj_series.exists():
+        inputs["trajectory_summary"] = traj_summary
+        inputs["trajectory_series"] = traj_series
+    return inputs
 
 
 # --------------------------------------------------------------------------- (a) landscape
@@ -416,7 +428,248 @@ def fig_recombination_topics(top_n: int = 15) -> go.Figure:
     return fig
 
 
+# ------------------------------------------------------------------- (e) trajectories
+
+
+def fig_trajectory_directions() -> go.Figure:
+    """Bar chart of leaf-topic trajectory direction counts (rising / flat / falling)."""
+    summ = mapio.load_trajectory_summary(GRAIN)
+    order = ["rising", "flat", "falling"]
+    color = {"rising": "#34a853", "flat": "#9aa0a6", "falling": "#ea4335"}
+    counts = summ["direction"].value_counts()
+    x = [d for d in order if d in counts.index] or list(counts.index)
+    y = [int(counts.get(d, 0)) for d in x]
+    fig = go.Figure(
+        go.Bar(
+            x=x,
+            y=y,
+            marker_color=[color.get(d, "#9aa0a6") for d in x],
+            hovertemplate="%{x}<br>topics: %{y}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title=f"Projected direction of {len(summ)} leaf topics (+5y share slope sign)",
+        template="plotly_white",
+        xaxis_title="projected direction",
+        yaxis_title="number of topics",
+        margin={"t": 60, "b": 50, "l": 60, "r": 20},
+    )
+    return fig
+
+
+def _traj_label(topic_id: int, label: str, *, n: int = 40) -> str:
+    """Compact ``T<id>: <truncated label>`` tag for dropdowns / legends."""
+    lab = label if isinstance(label, str) else ""
+    if len(lab) > n:
+        lab = lab[: n - 1].rstrip() + "…"
+    return f"T{int(topic_id)}: {lab}"
+
+
+def fig_trajectory_movers(top_n: int = 8) -> go.Figure:
+    """Fan charts for the top-N rising + top-N falling leaf topics by share slope.
+
+    Each topic gets a solid observed-share line and a dashed projected-share line with an
+    80% band (``share_lo``..``share_hi`` fill). Rising movers are greens, falling movers
+    are reds (legend grouped) so the two regimes read at a glance.
+    """
+    summ = mapio.load_trajectory_summary(GRAIN)
+    series = mapio.load_trajectory_series(GRAIN)
+    risers = summ.nlargest(top_n, "slope_share_per_yr")
+    fallers = summ.nsmallest(top_n, "slope_share_per_yr")
+    greens = ["#0b6e2e", "#1b9e4b", "#34a853", "#5cb87a", "#7fc99a", "#0f7a36", "#2bb05f"]
+    reds = ["#8b1a12", "#b3261b", "#ea4335", "#f06b60", "#c9342a", "#a01f16", "#d84236"]
+
+    fig = go.Figure()
+    for movers, palette, kind_lbl in ((risers, greens, "rising"), (fallers, reds, "falling")):
+        for i, row in enumerate(movers.itertuples()):
+            col = palette[i % len(palette)]
+            tser = series[series["topic_id"] == row.topic_id].sort_values("year")
+            obs = tser[tser["kind"] == "observed"]
+            proj = tser[tser["kind"] == "projected"]
+            name = _traj_label(row.topic_id, row.label)
+            gid = f"{kind_lbl}-{int(row.topic_id)}"
+            # Observed share: solid line.
+            fig.add_trace(
+                go.Scatter(
+                    x=obs["year"],
+                    y=obs["share"],
+                    mode="lines",
+                    name=name,
+                    legendgroup=gid,
+                    line={"color": col, "width": 1.8},
+                    hovertemplate=f"{name}<br>%{{x}}: share %{{y:.3f}}<extra></extra>",
+                )
+            )
+            # Projected share: dashed line, bridged from the last observed point.
+            if not proj.empty:
+                bridge = pd.concat([obs.tail(1), proj], ignore_index=True)
+                fig.add_trace(
+                    go.Scatter(
+                        x=bridge["year"],
+                        y=bridge["share"],
+                        mode="lines",
+                        name=name,
+                        legendgroup=gid,
+                        showlegend=False,
+                        line={"color": col, "width": 1.8, "dash": "dash"},
+                        hovertemplate=f"{name} (proj)<br>%{{x}}: share %{{y:.3f}}<extra></extra>",
+                    )
+                )
+                # 80% band: hi then lo with fill='tonexty' over the projected horizon.
+                fig.add_trace(
+                    go.Scatter(
+                        x=proj["year"],
+                        y=proj["share_hi"],
+                        mode="lines",
+                        name=name,
+                        legendgroup=gid,
+                        showlegend=False,
+                        line={"color": col, "width": 0},
+                        hoverinfo="skip",
+                    )
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=proj["year"],
+                        y=proj["share_lo"],
+                        mode="lines",
+                        name=name,
+                        legendgroup=gid,
+                        showlegend=False,
+                        line={"color": col, "width": 0},
+                        fill="tonexty",
+                        fillcolor=_rgba(col, 0.15),
+                        hoverinfo="skip",
+                    )
+                )
+    fig.update_layout(
+        title=f"Biggest movers — top {top_n} rising (green) + top {top_n} falling (red) topics",
+        template="plotly_white",
+        xaxis_title="year (solid = observed, dashed = projected +5y, band = 80%)",
+        yaxis_title="panel-conditional share",
+        legend_title="topic (click to toggle)",
+        height=640,
+        margin={"t": 60, "b": 50, "l": 60, "r": 20},
+    )
+    return fig
+
+
+def fig_trajectory_explorer() -> go.Figure:
+    """One figure with an ``updatemenus`` dropdown over ALL leaf topics (by topic_id).
+
+    Selecting a topic shows its observed+projected share with the 80% band. To keep the
+    HTML small (~149 topics), each topic is rendered as just THREE traces — observed line,
+    projected dashed line (bridged), and a single filled band trace built as a closed
+    polygon (hi forward then lo reversed) — and the dropdown toggles the ``visible`` array
+    three-at-a-time. The first topic is shown by default.
+    """
+    summ = mapio.load_trajectory_summary(GRAIN).sort_values("topic_id")
+    series = mapio.load_trajectory_series(GRAIN)
+    color = "#1a73e8"
+    band_color = _rgba(color, 0.15)
+
+    traces_per_topic = 3
+    topic_ids = list(summ["topic_id"])
+    labels = {int(r.topic_id): r.label for r in summ.itertuples()}
+
+    for idx, tid in enumerate(topic_ids):
+        visible = idx == 0
+        tser = series[series["topic_id"] == tid].sort_values("year")
+        obs = tser[tser["kind"] == "observed"]
+        proj = tser[tser["kind"] == "projected"]
+        name = _traj_label(tid, labels[int(tid)])
+        # Band as a single closed polygon trace (hi forward, lo reversed) — 1 trace/topic.
+        band_x: list = []
+        band_y: list = []
+        if not proj.empty:
+            band_x = list(proj["year"]) + list(proj["year"][::-1])
+            band_y = list(proj["share_hi"]) + list(proj["share_lo"][::-1])
+        fig_band = go.Scatter(
+            x=band_x,
+            y=band_y,
+            mode="lines",
+            fill="toself",
+            fillcolor=band_color,
+            line={"width": 0},
+            name=f"{name} 80% band",
+            showlegend=False,
+            hoverinfo="skip",
+            visible=visible,
+        )
+        obs_trace = go.Scatter(
+            x=obs["year"],
+            y=obs["share"],
+            mode="lines",
+            line={"color": color, "width": 2},
+            name="observed",
+            showlegend=False,
+            hovertemplate="%{x}: share %{y:.3f}<extra></extra>",
+            visible=visible,
+        )
+        bridge = pd.concat([obs.tail(1), proj], ignore_index=True) if not proj.empty else proj
+        proj_trace = go.Scatter(
+            x=bridge["year"] if not bridge.empty else [],
+            y=bridge["share"] if not bridge.empty else [],
+            mode="lines",
+            line={"color": color, "width": 2, "dash": "dash"},
+            name="projected",
+            showlegend=False,
+            hovertemplate="%{x}: proj share %{y:.3f}<extra></extra>",
+            visible=visible,
+        )
+        if idx == 0:
+            fig = go.Figure([fig_band, obs_trace, proj_trace])
+        else:
+            fig.add_traces([fig_band, obs_trace, proj_trace])
+
+    n_topics = len(topic_ids)
+    buttons = []
+    for idx, tid in enumerate(topic_ids):
+        vis = [False] * (n_topics * traces_per_topic)
+        for j in range(traces_per_topic):
+            vis[idx * traces_per_topic + j] = True
+        buttons.append(
+            {
+                "label": _traj_label(tid, labels[int(tid)], n=34),
+                "method": "update",
+                "args": [
+                    {"visible": vis},
+                    {"title": f"Trajectory — {_traj_label(tid, labels[int(tid)], n=60)}"},
+                ],
+            }
+        )
+
+    first = topic_ids[0]
+    fig.update_layout(
+        title=f"Trajectory — {_traj_label(first, labels[int(first)], n=60)}",
+        template="plotly_white",
+        xaxis_title="year (solid = observed, dashed = projected +5y, band = 80%)",
+        yaxis_title="panel-conditional share",
+        height=560,
+        margin={"t": 90, "b": 50, "l": 60, "r": 20},
+        updatemenus=[
+            {
+                "buttons": buttons,
+                "direction": "down",
+                "showactive": True,
+                "x": 0.0,
+                "xanchor": "left",
+                "y": 1.16,
+                "yanchor": "top",
+            }
+        ],
+    )
+    return fig
+
+
 # --------------------------------------------------------------------------- HTML assembly
+
+
+def _rgba(hex_color: str, alpha: float) -> str:
+    """Convert ``#rrggbb`` to an ``rgba(r,g,b,alpha)`` string for translucent fills."""
+    h = hex_color.lstrip("#")
+    r, g, b = (int(h[i : i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r},{g},{b},{alpha})"
 
 
 def _div(fig: go.Figure) -> str:
@@ -453,6 +706,16 @@ _LANDSCAPE_CAVEAT = (
     "size = paper count, colour = the origin journal's source/bridge/terminal role. Hover "
     "for top-words + origin journal + recombination rate. Same panel-conditional + "
     "1995-censoring caveats as the cascade tab."
+)
+_TRAJECTORY_CAVEAT = (
+    "Trajectories are a <b>descriptive</b> per-topic state-space model (a local-linear-trend "
+    "fitted on <b>logit(share)</b> / <b>log(volume)</b>) projected <b>+5y → 2030</b> with "
+    "<b>80% uncertainty bands</b>; all <b>149/149</b> topics fit OK. The fit window is "
+    "<b>1995&ndash;2025</b> with <b>2026 excluded</b> (a partial harvest year). 'Share' is "
+    "<b>panel-conditional</b> — the share of the 78-journal annual assigned output, not a "
+    "global field share. This is a state-space extrapolation of past trend, <b>explicitly "
+    "NOT a predictive/causal forecast</b> and <b>NOT the F3 emergence GNN</b> (which was "
+    "signed NULL at Gate G4). Read the bands, not the point line."
 )
 
 
@@ -510,12 +773,14 @@ _PAGE_TEMPLATE = """<!DOCTYPE html>
   <button class="tab-btn" data-tab="t-cascade">b. Cascade flows</button>
   <button class="tab-btn" data-tab="t-roles">c. Journal roles</button>
   <button class="tab-btn" data-tab="t-origins">d. Novelty origins</button>
+  {traj_nav_button}
 </nav>
 <main>
   <div id="t-landscape" class="tab-wrap">{sec_landscape}</div>
   <div id="t-cascade" class="tab-wrap" hidden>{sec_cascade}</div>
   <div id="t-roles" class="tab-wrap" hidden>{sec_roles}</div>
   <div id="t-origins" class="tab-wrap" hidden>{sec_origins}</div>
+  {traj_wrap}
 </main>
 <footer>
   SciField {version_upper} cartography &middot; map v0 &middot; {n_journals} journals. Data:
@@ -563,6 +828,24 @@ def build_html(version: str) -> str:
         _div(fig_geo_novelty()),
         _div(fig_recombination_topics()),
     )
+
+    # 5th tab is conditional: v1 has no trajectory layer, so the loaders raise
+    # FileNotFoundError — in that case omit the button + wrap entirely (4-tab page).
+    traj_nav_button = ""
+    traj_wrap = ""
+    try:
+        sec_trajectory = _section(
+            "e. Trajectories",
+            _TRAJECTORY_CAVEAT,
+            _div(fig_trajectory_directions()),
+            _div(fig_trajectory_movers()),
+            _div(fig_trajectory_explorer()),
+        )
+        traj_nav_button = '<button class="tab-btn" data-tab="t-trajectory">e. Trajectories</button>'
+        traj_wrap = f'<div id="t-trajectory" class="tab-wrap" hidden>{sec_trajectory}</div>'
+    except FileNotFoundError:
+        pass  # no trajectory parquets (e.g. v1) → stay at 4 tabs
+
     return _PAGE_TEMPLATE.format(
         version_upper="V2" if version == "v1" else version.upper(),
         n_journals=N_JOURNALS,
@@ -572,13 +855,24 @@ def build_html(version: str) -> str:
         sec_cascade=sec_cascade,
         sec_roles=sec_roles,
         sec_origins=sec_origins,
+        traj_nav_button=traj_nav_button,
+        traj_wrap=traj_wrap,
     )
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Build the map for a data version, write the HTML + sidecar, print the path."""
+    """Build the map for a data version, write the HTML + sidecar, print the path.
+
+    With ``--publish-to PATH`` the identical HTML is also written to ``PATH/index.html``
+    (plus a ``record_run`` sidecar there) — e.g. the public ``docs/cartography/map`` site.
+    """
     ap = argparse.ArgumentParser(description="Assemble the V2 cartography map v0 (static HTML).")
     ap.add_argument("--data-version", default="v1", help="v1 = frozen prove-phase; e.g. v2.")
+    ap.add_argument(
+        "--publish-to",
+        default=None,
+        help="optional dir to ALSO write index.html + sidecar to (e.g. docs/cartography/map).",
+    )
     args = ap.parse_args(argv)
     version = args.data_version
     os.environ["SCIFIELD_DATA_VERSION"] = version  # mapio loaders read this
@@ -592,20 +886,17 @@ def main(argv: list[str] | None = None) -> None:
     html = build_html(version)
     OUT_HTML.write_text(html, encoding="utf-8")
 
-    record_run(
-        artifact_path=OUT_HTML,
-        inputs=_inputs(version),
-        config={
-            "task": "V2-S07" if version == "v1" else "V2-S09",
-            "data_version": version,
-            "artifact": f"{OUT_DIR.name}/index.html",
-            "grain": GRAIN,
-            "n_journals": N_JOURNALS,
-            "renderer": "plotly static HTML (CDN script), no server (streamlit/dash absent)",
-            "panel_conditional": "origins are first-in-panel, not first in world",
-            "left_censoring_1995": "early topics originate at the 1995 panel start",
-        },
-    )
+    config = {
+        "task": "V2-S07" if version == "v1" else "V2-S09",
+        "data_version": version,
+        "artifact": f"{OUT_DIR.name}/index.html",
+        "grain": GRAIN,
+        "n_journals": N_JOURNALS,
+        "renderer": "plotly static HTML (CDN script), no server (streamlit/dash absent)",
+        "panel_conditional": "origins are first-in-panel, not first in world",
+        "left_censoring_1995": "early topics originate at the 1995 panel start",
+    }
+    record_run(artifact_path=OUT_HTML, inputs=_inputs(version), config=config)
 
     size_kb = OUT_HTML.stat().st_size / 1024
     n_divs = html.count("plotly-graph-div")
@@ -613,6 +904,20 @@ def main(argv: list[str] | None = None) -> None:
     print(f"  size: {size_kb:.1f} KB  |  plotly divs: {n_divs}  |  journals: {N_JOURNALS}")
     print(f"  sidecar: {OUT_HTML}.run.json")
     print(f"  open: double-click {OUT_HTML.relative_to(REPO_ROOT)} (no server needed)")
+
+    if args.publish_to is not None:
+        pub_dir = Path(args.publish_to)
+        if not pub_dir.is_absolute():
+            pub_dir = REPO_ROOT / pub_dir
+        pub_dir.mkdir(parents=True, exist_ok=True)
+        pub_html = pub_dir / "index.html"
+        pub_html.write_text(html, encoding="utf-8")
+        pub_config = dict(config)
+        pub_config["published_to"] = str(pub_dir.relative_to(REPO_ROOT))
+        record_run(artifact_path=pub_html, inputs=_inputs(version), config=pub_config)
+        print(f"  PUBLISHED copy: {pub_html}")
+        print(f"  sidecar: {pub_html}.run.json")
+
     assert not math.isnan(size_kb)
 
 

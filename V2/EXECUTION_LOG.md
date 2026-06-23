@@ -563,3 +563,44 @@ _status: COMMITTED & GREEN 2026-06-21_
   ruff/black/mypy (pre-commit) green. **$0** — local CPU on existing tables, no DeepSeek/API.
 - This is V2 **Phase F–G** work, continuing after the V2-S08 expansion harvest (1.49M papers / 78
   journals) and the V2-S09 scaled cartography re-run (logged via commits + findings docs, not in this file).
+
+---
+
+## V2-S11 — Public usable map release (Zenodo + GitHub Pages)
+_status: SHIPPED 2026-06-22 — merged to `main` (Pages live), tag `v0.2.0` + draft Release staged; DOI mint = Samer's one-click publish_
+
+- **What:** the capstone of the V2 cartography program — shipped the literature-cartography map as a usable
+  public artifact. Wired the V2-S10 **trajectory layer into the map as a 5th "Trajectories" tab**, stood up a
+  public **mkdocs → GitHub Pages** docs section, and prepared a small **Zenodo data deposit** (derived tables +
+  the static map). Gate **G6 was already SIGNED PASS** (2026-06-09), so the public release was unblocked.
+- **Map (now 5 tabs):** `src/scifield/cartography/mapio.py` gained version-aware, graceful-absence loaders
+  `load_trajectory_summary` / `load_trajectory_series` (mirror `load_lag_matrix`; raise `FileNotFoundError`
+  when the trajectory dir is absent, so **v1 still builds with 4 tabs**). `V2/scripts/build_map.py` gained
+  `fig_trajectory_directions` (rising/flat/falling distribution), `fig_trajectory_movers` (top rising+falling
+  fan charts, observed solid + projected dashed + 80% band), and `fig_trajectory_explorer` (single Plotly
+  `updatemenus` dropdown over all **149 leaf topics** — the queryable per-topic selector), plus a conditional
+  5th nav button/tab and a `--publish-to` flag. Rebuilt `V2/map_v0_v2/index.html` (5 tabs, ~1.18 MB, 12 divs)
+  and published a docs copy to `docs/cartography/map/index.html` (byte-identical, own `.run.json`). The
+  trajectory tab is **descriptive** (+5y→2030, 80% bands, share is panel-conditional) — **explicitly NOT a
+  predictive/causal claim and NOT the dead F3 GNN** (F3 = signed NULL at Gate G4).
+- **Public docs (`docs/cartography/`):** `index.md` (overview + panel-conditional / 1995-left-censoring
+  caveats + live-map link), `using-the-map.md` (tab-by-tab incl. the trajectory selector), `reproduce.md`
+  (exact rebuild/test/docs commands + sidecar verification + the DOI-handoff runbook), `data-dictionary.md`
+  (every deposited table + column; doubles as the deposit README). `mkdocs.yml` gained a "Cartography (V2)"
+  nav section; `README.md` gained a live-map link + a **TODO DOI badge** (no DOI fabricated). The live deploy
+  is **`https://samersalman.github.io/scifield/cartography/`** (`.github/workflows/docs.yml` runs
+  `mkdocs build --strict` on push to `main`).
+- **Deposit (~1.7 MB, derived only):** scoped `.gitignore` negation `!V2/data_v2/**/*.parquet` un-ignores the
+  17 derived cartography parquets (`{cascade,flow,roles,origins,trajectory}/`) + their 17 `.run.json`
+  sidecars; the topic-label dictionary was **copied** into `V2/data_v2/topic_hierarchy.parquet` (NOT
+  un-ignored in place — `data/v2/` holds GBs of raw embeddings/faiss/kuzu/topics_input that stay ignored).
+  `.zenodo.json` + `CITATION.cff` bumped to **v0.2.0** (date 2026-06-22, cartography title/description,
+  Apache-2.0, cartography keywords). The raw 1.49M-paper corpus is reproducible-from-pipeline, **not
+  redistributed**.
+- **Tests/gates:** `tests/test_cartography_mapio.py` (+6 trajectory-loader tests) and new
+  `tests/test_build_map.py` (+5 builder smoke tests) → full suite **611 passed, 1 skipped** (baseline 600+1;
+  +11, zero regressions). `uv run mkdocs build --strict` → **exit 0**. ruff/black green. **$0** — local CPU,
+  no DeepSeek/API/GPU.
+- **Handoff (the only remaining, irreversible step is Samer's):** publish the **draft GitHub Release
+  `v0.2.0`** → Zenodo auto-archives the tagged source and **mints the DOI**; then drop the DOI into the
+  README badge + the Zenodo record (runbook: `docs/cartography/reproduce.md` §6).

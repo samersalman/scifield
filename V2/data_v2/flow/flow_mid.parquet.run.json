@@ -1,0 +1,24 @@
+{
+  "config": {
+    "citations": true,
+    "grain": "mid",
+    "min_papers": 1,
+    "noise_topic_dropped": -1,
+    "task": "V2-S01"
+  },
+  "config_hash": "ee5cc4ec8fc0b4421e1aab147998d1ed14abf6c127236bd6caca00a85ada5f4b",
+  "git_dirty": true,
+  "git_sha": "b12de2fc5b258b7c472a9742c4d32d13f32d0db8",
+  "input_hashes": {
+    "archetypes": "09b497a791b3b511a62cde1e0ec366d7edc9e74de7974c33d7f533642c084114",
+    "kuzu_graph": "987b72f27240865a8e8898cd78b42d72110f3dff49a962ebcbf8137428878a20",
+    "papers_duckdb": "5b624022d61d3729c5a5eb10e695c4c994d3c6f1d8fbcf1ff5bc413a2eb59ed3",
+    "topic_hierarchy": "3358f6053a3b9968101661556af0e263c204984e7e5eb7190d074548b1c42e16"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-21T15:46:00.075897+00:00"
+}

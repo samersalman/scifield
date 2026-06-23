@@ -1,0 +1,79 @@
+{
+  "config": {
+    "assign_mode": "subsample",
+    "chosen_config": {
+      "core_dist_n_jobs": 1,
+      "hdbscan_cluster_selection_method": "eom",
+      "hdbscan_min_cluster_size": 80,
+      "hdbscan_min_samples": null,
+      "nr_topics": "auto",
+      "random_state": 42,
+      "umap_metric": "cosine",
+      "umap_min_dist": 0.0,
+      "umap_n_components": 5,
+      "umap_n_neighbors": 15,
+      "vectorizer_min_df": 10,
+      "vectorizer_ngram_max": 2
+    },
+    "chosen_row_index": null,
+    "coherence": {
+      "c_npmi": 0.08074011832068065,
+      "c_v": 0.6053278665154683
+    },
+    "constraints": {
+      "n_leaf_topics_max": 200,
+      "n_leaf_topics_min": 100,
+      "noise_fraction_max": 0.2
+    },
+    "constraints_unmet": false,
+    "deviations": {},
+    "hierarchy": {
+      "target_mid_levels": 20,
+      "target_top_levels": 6
+    },
+    "integrity_check": {
+      "papers_distinct": 1391306,
+      "papers_duplicate_pmids": 102585,
+      "papers_total": 1493891
+    },
+    "limit": 10000,
+    "n_leaf_topics": 14,
+    "n_mid_levels": 14,
+    "n_pmids_deduped": 10000,
+    "n_top_levels": 8,
+    "noise_fraction": 0.1653,
+    "selector": "npmi_top10",
+    "skip_sweep": true,
+    "software_versions": {
+      "bertopic": "0.17.4",
+      "gensim": "4.4.0",
+      "hdbscan": "0.8.43",
+      "numpy": "2.4.6",
+      "sklearn": "1.8.0",
+      "umap_learn": "0.5.12"
+    },
+    "subsample_n": 8000,
+    "subsample_seed": 42,
+    "thread_count": 14,
+    "wall_seconds": {
+      "final_fit": 2509.028,
+      "hierarchy": 0.689,
+      "sweep": 0.0,
+      "total": 2604.693
+    }
+  },
+  "config_hash": "c09fccc255ce970af030a18263c7676066d2c3cbf5168e1ac5612b68b4842eed",
+  "git_dirty": true,
+  "git_sha": "16fdc4aa089efcb943a2a4ef57cbc9eb7d79e0ba",
+  "input_hashes": {
+    "embeddings_parquet": "809104e98bca01ed13686b96d7efccf123301fecceb0cea969df32e8c825f3d0",
+    "papers_duckdb": "d76e09a6117c3a5029d6277280b38626816c4991447d896b8ba85fb1292da842",
+    "topics_config_yaml": "19bdaba6b7d2f2181d1af760f14627d3a426fd3a76bc368b327614fa84272afa"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-18T03:21:46.433643+00:00"
+}

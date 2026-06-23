@@ -47,3 +47,8 @@ nav:
   - API: api/scifield.md
   - Operations:
       - Brev: operations/brev.md
+  - "Cartography (V2)":
+      - Overview: cartography/index.md
+      - Using the map: cartography/using-the-map.md
+      - Reproduce: cartography/reproduce.md
+      - Data dictionary: cartography/data-dictionary.md

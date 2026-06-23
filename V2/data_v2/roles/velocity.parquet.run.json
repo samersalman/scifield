@@ -1,0 +1,33 @@
+{
+  "config": {
+    "bridge": "betweenness centrality on the directed seeding network",
+    "grains": [
+      "leaf",
+      "mid"
+    ],
+    "left_censoring": "seeding sub-signal biased by 1995 panel start; flow + betweenness sub-signals are not",
+    "panel_conditional": "roles are within-panel; true source generalists (Nature/NEJM/Lancet) are not in the corpus",
+    "role_rule": "argmax of z-scored {source, bridge, terminal}; ties source>bridge>terminal",
+    "source": "mean z(seeding_score) + z(net_outflow_share)",
+    "table": "velocity",
+    "task": "V2-S05",
+    "terminal": "mean z(-net_outflow_share) + z(1-seeding_score)",
+    "velocity": "years from publication to citation (citing_year - pub_year)",
+    "weight_threshold": 0.5
+  },
+  "config_hash": "f62b771ed5193271ef164b7b1554f8c060cefd79efdb0cb9fc5e3497797cedbe",
+  "git_dirty": true,
+  "git_sha": "b12de2fc5b258b7c472a9742c4d32d13f32d0db8",
+  "input_hashes": {
+    "archetypes": "09b497a791b3b511a62cde1e0ec366d7edc9e74de7974c33d7f533642c084114",
+    "cited_by": "d20b55d434606f484e6535ace96f1b086bb51f874f4a725fde41a4be2b8e8251",
+    "flow_leaf": "a967a056f2695dc4ffd28155b5124e4f1e09388689abc0c3812fd3215254314e",
+    "flow_mid": "d2b1a42f07724f1994499bc8f73620877efa98dc8cf36781d25f5787ae706768"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-21T15:54:06.502529+00:00"
+}

@@ -1,0 +1,27 @@
+{
+  "config": {
+    "axis": "geography",
+    "low_n_threshold": 30,
+    "novelty_cols": [
+      "sem_nov_mean",
+      "sem_nov_min",
+      "cd5",
+      "cd10"
+    ],
+    "task": "V2-S06"
+  },
+  "config_hash": "6613f0dd24a69469fb1f3cf93294c0f2a0801c441d3ce48164f4e6e8c0606ccf",
+  "git_dirty": true,
+  "git_sha": "b12de2fc5b258b7c472a9742c4d32d13f32d0db8",
+  "input_hashes": {
+    "archetypes": "09b497a791b3b511a62cde1e0ec366d7edc9e74de7974c33d7f533642c084114",
+    "institutions": "6939ad53396d4d59ee3b7b1e16aa6c8a5fd2c45e87beeb12454cfca4bdc1e77f",
+    "paper_institutions": "1f2bf848eae37435d76444614d0175c63915441c7cef752cf77a628f153c2d4d"
+  },
+  "software_versions": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "scifield": "0.0.1"
+  },
+  "timestamp": "2026-06-21T15:54:10.277164+00:00"
+}
